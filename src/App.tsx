@@ -65,6 +65,8 @@ import {
   db, 
   googleProvider, 
   signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
   signOut, 
   onAuthStateChanged, 
   doc, 
@@ -119,6 +121,16 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Process redirect result if available (necessary for mobile/WebView logins)
+    getRedirectResult(auth).catch(error => {
+      console.error("Redirect login error:", error);
+      if (error.message.includes("missing initial state")) {
+        alert("WebView Storage Error: Please enable DOM Storage (setDomStorageEnabled) in your Android Studio WebView settings.");
+      } else {
+        alert("Login Error: " + error.message);
+      }
+    });
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
@@ -151,9 +163,16 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+      // Use redirect on mobile/WebView, popup on desktop
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (isMobile) {
+        await signInWithRedirect(auth, googleProvider);
+      } else {
+        await signInWithPopup(auth, googleProvider);
+      }
+    } catch (error: any) {
       console.error("Login failed:", error);
+      alert("Login Error: " + error.message);
     }
   };
 
