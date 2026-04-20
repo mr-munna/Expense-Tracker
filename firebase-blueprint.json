@@ -1,0 +1,126 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role-based access control",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email", "description": "User email" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "role": { 
+          "type": "string", 
+          "enum": ["super_admin", "admin", "member"],
+          "description": "User role: super_admin (full access), admin (manage data), member (view only)"
+        },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "EmployeePayment": {
+      "title": "Employee Payment",
+      "description": "Record of payment to an employee",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uniqueId": { "type": "string" },
+        "employeeName": { "type": "string" },
+        "projectName": { "type": "string" },
+        "payment": { "type": "number" },
+        "transport": { "type": "number" },
+        "timestamp": { "type": "string" },
+        "createdBy": { "type": "string", "description": "UID of the user who created this record" }
+      },
+      "required": ["id", "uniqueId", "employeeName", "projectName", "payment", "timestamp"]
+    },
+    "ProjectExpense": {
+      "title": "Project Expense",
+      "description": "Record of material or transport expense for a project",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uniqueId": { "type": "string" },
+        "projectName": { "type": "string" },
+        "materialsCost": { "type": "number" },
+        "transportCost": { "type": "number" },
+        "othersCost": { "type": "number" },
+        "budget": { "type": "number" },
+        "timestamp": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["id", "uniqueId", "projectName", "materialsCost", "transportCost", "othersCost", "timestamp"]
+    },
+    "Bill": {
+      "title": "Bill",
+      "description": "Invoice or quotation record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["BILL", "QUOTATION"] },
+        "billNumber": { "type": "string" },
+        "date": { "type": "string" },
+        "recipientName": { "type": "string" },
+        "site": { "type": "string" },
+        "subject": { "type": "string" },
+        "items": { "type": "array", "items": { "type": "object" } },
+        "totalInWords": { "type": "string" },
+        "grandTotal": { "type": "number" },
+        "preparedBy": { "type": "string" },
+        "signature": { "type": "string" },
+        "termsAndConditions": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "revision": { "type": "number" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["id", "type", "billNumber", "date", "recipientName", "site", "items", "grandTotal"]
+    },
+    "CollectedBill": {
+      "title": "Collected Bill",
+      "description": "Record of collected bills from clients",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "projectName": { "type": "string" },
+        "amount": { "type": "number" },
+        "createdBy": { "type": "string", "description": "UID of the user who created this record" }
+      },
+      "required": ["id", "date", "projectName", "amount"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "Global application settings",
+      "type": "object",
+      "properties": {
+        "pdf": { "type": "object", "description": "PDF generation settings" },
+        "tomorrowWork": { "type": "object", "description": "History of tomorrow work data" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/payments/{id}": {
+      "schema": "EmployeePayment",
+      "description": "Employee payment records"
+    },
+    "/expenses/{id}": {
+      "schema": "ProjectExpense",
+      "description": "Project expense records"
+    },
+    "/bills/{id}": {
+      "schema": "Bill",
+      "description": "Bills and quotations"
+    },
+    "/collectedBills/{id}": {
+      "schema": "CollectedBill",
+      "description": "Collected bills"
+    },
+    "/settings/{id}": {
+      "schema": "Settings",
+      "description": "Global settings (pdf, tomorrowWork)"
+    }
+  }
+}

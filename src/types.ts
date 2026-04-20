@@ -1,0 +1,90 @@
+export interface EmployeePayment {
+  id: string;
+  uniqueId: string;
+  timestamp: string;
+  employeeName: string;
+  projectName: string;
+  payment: number;
+  transport: number;
+}
+
+export interface ProjectExpense {
+  id: string;
+  uniqueId: string;
+  projectName: string;
+  timestamp: string;
+  materialsCost: number;
+  transportCost: number;
+  othersCost: number;
+  budget: number;
+}
+
+export interface TomorrowWorkRow {
+  id: string;
+  projectName: string;
+  projectAddress: string;
+  workDescription: string;
+  manpowerList: string[];
+  overtime: string;
+}
+
+export interface BillItem {
+  id: string;
+  areaName: string;
+  tiles: string;
+  qty: number;
+  unit: string;
+  price: number;
+  total: number;
+}
+
+export interface Bill {
+  id: string;
+  type: 'BILL' | 'QUOTATION';
+  billNumber: string;
+  date: string;
+  recipientName: string;
+  site: string;
+  subject: string;
+  items: BillItem[];
+  totalInWords: string;
+  grandTotal: number;
+  preparedBy: string;
+  signature?: string;
+  termsAndConditions?: string;
+  timestamp: string;
+  revision?: number;
+}
+
+export interface PDFSettings {
+  companyName: string;
+  logo?: string;
+  headerBgColor: string;
+  headerTextColor: string;
+  footerBgColor: string;
+  footerTextColor: string;
+  address: string;
+  email: string;
+  contact: string;
+  fontStyle: 'helvetica' | 'times' | 'courier';
+  hideNameText?: boolean;
+}
+
+export interface CollectedBill {
+  id: string;
+  date: string;
+  projectName: string;
+  amount: number;
+}
+
+export type UserRole = 'super_admin' | 'admin' | 'member';
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  createdAt: string;
+}
+
+export type View = 'DASHBOARD' | 'PAYMENT_HISTORY' | 'PROJECT_SUMMARY' | 'REVENUE' | 'ADD_DATA' | 'EMPLOYEE_TOTALS' | 'EXPORT' | 'ABOUT' | 'CLOUD_SYNC' | 'CONTACT_INFO' | 'TOMORROW_WORK' | 'TOMORROW_WORK_HISTORY' | 'TOMORROW_WORK_DETAILS' | 'BILL' | 'QUOTATION' | 'BILL_HISTORY' | 'PDF_SETTINGS' | 'USERS';

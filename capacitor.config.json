@@ -1,0 +1,6 @@
+{
+  "appId": "com.atasmim.engineering",
+  "appName": "Atasmim Engineering",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
