@@ -39,6 +39,13 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function isApproved() {
+      return isAuthenticated() && (
+        getUserData().isApproved == true || 
+        (request.auth.token.email == "bijoymahmudmunna@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+
     function isSuperAdmin() {
       return isAuthenticated() && (
         getUserData().role == 'super_admin' || 
@@ -47,11 +54,11 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() && (getUserData().role == 'admin' || isSuperAdmin());
+      return isApproved() && (getUserData().role == 'admin' || isSuperAdmin());
     }
 
     function isMember() {
-      return isAuthenticated() && (getUserData().role == 'member' || isAdmin());
+      return isApproved() && (getUserData().role == 'member' || isAdmin());
     }
 
     function isValidUser(data) {
@@ -71,13 +78,17 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if isAuthenticated();
-      // Only super_admin can create/update roles. 
-      // Users can create their own profile initially if it doesn't exist, but only as 'member' unless they are the default super_admin.
+      // Only super_admin can create/update roles and isApproved status. 
+      // Users can create their own profile initially if it doesn't exist, but only as 'member' and 'isApproved: false' (unless default super_admin).
       allow create: if isAuthenticated() && request.auth.uid == uid && (
-        (request.resource.data.role == 'member') || 
-        (request.auth.token.email == "bijoymahmudmunna@gmail.com" && request.resource.data.role == 'super_admin')
+        (request.resource.data.role == 'member' && request.resource.data.isApproved == false) || 
+        (request.auth.token.email == "bijoymahmudmunna@gmail.com" && request.resource.data.role == 'super_admin' && request.resource.data.isApproved == true)
       );
-      allow update: if isSuperAdmin() || (isAuthenticated() && request.auth.uid == uid && request.resource.data.role == resource.data.role);
+      allow update: if isSuperAdmin() || (
+        isAuthenticated() && request.auth.uid == uid && 
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.isApproved == resource.data.isApproved
+      );
       allow delete: if isSuperAdmin();
     }
 

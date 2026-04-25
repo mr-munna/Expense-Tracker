@@ -36,6 +36,9 @@ import {
   Printer,
   Share2,
   LogOut,
+  LogIn,
+  UserPlus,
+  ShieldX,
   Users as UsersIcon,
   ShieldCheck,
   ShieldAlert,
@@ -148,6 +151,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
             email: firebaseUser.email || '',
             displayName: firebaseUser.displayName || 'User',
             role: isDefaultSuperAdmin ? 'super_admin' : 'member',
+            isApproved: isDefaultSuperAdmin, // Default Super Admin is auto-approved
             createdAt: new Date().toISOString()
           };
           await setDoc(userDoc, newProfile);
@@ -184,9 +188,10 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const isAdmin = profile?.role === 'admin' || profile?.role === 'super_admin';
-  const isSuperAdmin = profile?.role === 'super_admin';
-  const isMember = !!profile;
+  const isApproved = profile?.isApproved === true || (user?.email === 'bijoymahmudmunna@gmail.com');
+  const isAdmin = isApproved && (profile?.role === 'admin' || profile?.role === 'super_admin');
+  const isSuperAdmin = isApproved && profile?.role === 'super_admin';
+  const isMember = isApproved && !!profile;
 
   return (
     <AuthContext.Provider value={{ user, profile, loading, isAdmin, isSuperAdmin, isMember, login, logout }}>
@@ -211,7 +216,7 @@ export default function App() {
 }
 
 function AppContent() {
-  const { user, profile, loading, isAdmin, isSuperAdmin, login, logout } = useAuth();
+  const { user, profile, loading, isAdmin, isSuperAdmin, isMember, login, logout } = useAuth();
   const [currentView, setCurrentView] = useState<View>('DASHBOARD');
 
   const [payments, setPayments] = useState<EmployeePayment[]>([]);
@@ -236,7 +241,7 @@ function AppContent() {
 
   // --- Firestore Listeners ---
   useEffect(() => {
-    if (!user) return;
+    if (!isMember) return;
 
     const unsubPayments = onSnapshot(collection(db, 'payments'), (snap) => {
       setPayments(snap.docs.map(doc => doc.data() as EmployeePayment));
@@ -281,7 +286,7 @@ function AppContent() {
       unsubSettings();
       unsubTomorrow();
     };
-  }, [user]);
+  }, [isMember]);
 
   // Load current rows when date changes
   useEffect(() => {
@@ -343,8 +348,10 @@ function AppContent() {
   const updateTomorrowWorkData = async (newData: {[date: string]: TomorrowWorkRow[]}) => {
     try {
       await setDoc(doc(db, 'settings', 'tomorrowWork'), newData);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating tomorrow work data:", error);
+      alert("Failed to save data. You may not have permission.");
+      throw error; // Rethrow to catch in UI so it doesn't navigate
     }
   };
 
@@ -391,12 +398,37 @@ function AppContent() {
     return <LoginView onLogin={login} />;
   }
 
+  if (profile && !profile.isApproved) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-6 text-center">
+        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full border border-slate-100">
+          <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-6">
+            <ShieldAlert className="w-10 h-10 text-amber-500" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-800 mb-3">Approval Pending</h2>
+          <p className="text-slate-600 mb-8">
+            Your account is waiting for Super Admin approval. Please contact the administrator to get access.
+          </p>
+          <button 
+            onClick={logout}
+            className="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all flex items-center justify-center gap-2"
+          >
+            <LogOut className="w-5 h-5" />
+            Logout
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const addPayment = async (payment: Omit<EmployeePayment, 'id'>) => {
     try {
       const id = crypto.randomUUID();
       await setDoc(doc(db, 'payments', id), { ...payment, id, createdBy: user?.uid });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding payment:", error);
+      alert("Failed to save data. You may not have permission.");
+      throw error;
     }
   };
 
@@ -404,8 +436,10 @@ function AppContent() {
     try {
       const id = crypto.randomUUID();
       await setDoc(doc(db, 'expenses', id), { ...expense, id, createdBy: user?.uid });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding expense:", error);
+      alert("Failed to save data. You may not have permission.");
+      throw error;
     }
   };
 
@@ -413,8 +447,10 @@ function AppContent() {
     try {
       const id = crypto.randomUUID();
       await setDoc(doc(db, 'collectedBills', id), { ...bill, id, createdBy: user?.uid });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding collected bill:", error);
+      alert("Failed to collect bill. You may not have permission.");
+      throw error;
     }
   };
 
@@ -603,11 +639,15 @@ function AppContent() {
                 return;
               }
 
-              await updateTomorrowWorkData({
-                ...tomorrowWorkData,
-                [tomorrowWorkDate]: currentTomorrowWorkRows
-              });
-              setCurrentView('TOMORROW_WORK_DETAILS');
+              try {
+                await updateTomorrowWorkData({
+                  ...tomorrowWorkData,
+                  [tomorrowWorkDate]: currentTomorrowWorkRows
+                });
+                setCurrentView('TOMORROW_WORK_DETAILS');
+              } catch (e) {
+                // error handled in updateTomorrowWorkData
+              }
             }}
           />
         );
@@ -1278,35 +1318,39 @@ function AddDataView({ onAddPayment, onAddProject, onBack, payments, projectExpe
     ).values()
   );
 
-  const handleSave = () => {
+  const handleSave = async () => {
     let saved = false;
 
-    if (empForm.employeeName && empForm.projectName && (empForm.payment || empForm.transport)) {
-      onAddPayment({
-        ...empForm,
-        payment: parseFloat(empForm.payment || '0'),
-        transport: parseFloat(empForm.transport || '0')
-      });
-      saved = true;
-    }
-    
-    if (projForm.projectName && (projForm.materialsCost || projForm.transportCost || projForm.othersCost)) {
-      onAddProject({
-        ...projForm,
-        timestamp: new Date().toLocaleString('en-GB'),
-        materialsCost: parseFloat(projForm.materialsCost || '0'),
-        transportCost: parseFloat(projForm.transportCost || '0'),
-        othersCost: parseFloat(projForm.othersCost || '0'),
-        budget: 0
-      });
-      saved = true;
-    }
+    try {
+      if (empForm.employeeName && empForm.projectName && (empForm.payment || empForm.transport)) {
+        await onAddPayment({
+          ...empForm,
+          payment: parseFloat(empForm.payment || '0'),
+          transport: parseFloat(empForm.transport || '0')
+        });
+        saved = true;
+      }
+      
+      if (projForm.projectName && (projForm.materialsCost || projForm.transportCost || projForm.othersCost)) {
+        await onAddProject({
+          ...projForm,
+          timestamp: new Date().toLocaleString('en-GB'),
+          materialsCost: parseFloat(projForm.materialsCost || '0'),
+          transportCost: parseFloat(projForm.transportCost || '0'),
+          othersCost: parseFloat(projForm.othersCost || '0'),
+          budget: 0
+        });
+        saved = true;
+      }
 
-    if (saved) {
-      alert('Data saved successfully!');
-      onBack();
-    } else {
-      alert('Please fill in at least one section (Employee or Project) with required fields.');
+      if (saved) {
+        alert('Data saved successfully!');
+        onBack();
+      } else {
+        alert('Please fill in at least one section (Employee or Project) with required fields.');
+      }
+    } catch (error) {
+      // Errors are alerted inside the onAdd... functions, so just do nothing here.
     }
   };
 
@@ -2010,16 +2054,20 @@ function RevenueView({
     );
   }, [projectExpenses, payments, collectedBills]);
 
-  const handleCollectBill = () => {
+  const handleCollectBill = async () => {
     if (!collectProject || !collectAmount) return;
-    onAddCollectedBill({
-      date: collectDate,
-      projectName: collectProject,
-      amount: parseFloat(collectAmount)
-    });
-    setCollectProject('');
-    setCollectAmount('');
-    alert('Bill collected successfully!');
+    try {
+      await onAddCollectedBill({
+        date: collectDate,
+        projectName: collectProject,
+        amount: parseFloat(collectAmount)
+      });
+      setCollectProject('');
+      setCollectAmount('');
+      alert('Bill collected successfully!');
+    } catch (e) {
+      // error handled in AddCollectedBill
+    }
   };
 
   const handleBudgetSave = () => {
@@ -4328,9 +4376,15 @@ function BillView({ type, nextNumber, onSave, onBack, initialBill, pdfSettings }
       timestamp: initialBill ? initialBill.timestamp : new Date().toLocaleString('en-GB'),
       revision
     };
-    onSave(newBill);
-    // Automatically download PDF on save
-    await generateBillPDF(newBill, 'download', pdfSettings);
+    
+    try {
+      await onSave(newBill);
+      // Automatically download PDF on save
+      await generateBillPDF(newBill, 'download', pdfSettings);
+    } catch (error) {
+      console.error("Error in save sequence:", error);
+      // Inner onSave handles alert already
+    }
   };
 
   return (
@@ -4658,9 +4712,27 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
             onClick={onLogin}
             className="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-2xl bg-[#0D47A1] text-white font-bold text-lg hover:bg-[#1565C0] transition-all active:scale-[0.98] shadow-lg shadow-blue-200"
           >
-            <Globe className="w-6 h-6" />
+            <LogIn className="w-6 h-6" />
             Sign in with Google
           </button>
+
+          <div className="relative py-2">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-100"></div>
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-white px-2 text-slate-400 font-medium tracking-widest">New User?</span>
+            </div>
+          </div>
+
+          <button 
+            onClick={() => window.open("https://ais-pre-3ezh2wa7bph443xsuqhg5r-672751479638.asia-southeast1.run.app", "_blank")}
+            className="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-2xl bg-white border-2 border-slate-100 text-slate-700 font-bold text-lg hover:bg-slate-50 hover:border-slate-200 transition-all active:scale-[0.98]"
+          >
+            <UserPlus className="w-6 h-6 text-[#0D47A1]" />
+            Request Sign Up / APK User
+          </button>
+          
           <p className="text-xs text-slate-400 px-4">
             Access restricted to authorized personnel only. Please use your company email to sign in.
           </p>
@@ -4697,6 +4769,15 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const toggleApproval = async (uid: string, currentStatus: boolean) => {
+    try {
+      await updateDoc(doc(db, 'users', uid), { isApproved: !currentStatus });
+    } catch (error) {
+      console.error("Failed to update approval:", error);
+      alert("Failed to update approval. You might not have permission.");
+    }
+  };
+
   return (
     <div className="space-y-6 pb-20">
       <div className="flex items-center justify-between">
@@ -4713,9 +4794,9 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
           <div className="text-center py-10 text-slate-400">Loading users...</div>
         ) : (
           users.map(user => (
-            <div key={user.uid} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between gap-4">
+            <div key={user.uid} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${user.isApproved ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
                   {user.displayName.charAt(0)}
                 </div>
                 <div className="min-w-0">
@@ -4724,24 +4805,35 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
                 </div>
               </div>
               
-              <div className="flex items-center gap-2">
-                <select 
-                  value={user.role}
-                  onChange={(e) => updateRole(user.uid, e.target.value as UserRole)}
-                  className="text-xs font-bold py-1.5 px-3 rounded-lg border border-slate-200 bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={user.email === 'bijoymahmudmunna@gmail.com'}
-                >
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                  <option value="super_admin">Super Admin</option>
-                </select>
-                {user.role === 'super_admin' ? (
-                  <ShieldCheck className="w-4 h-4 text-rose-500" />
-                ) : user.role === 'admin' ? (
-                  <ShieldAlert className="w-4 h-4 text-amber-500" />
-                ) : (
-                  <Shield className="w-4 h-4 text-blue-500" />
-                )}
+              <div className="flex items-center gap-3 ml-auto sm:ml-0">
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${user.isApproved ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+                    {user.isApproved ? 'APPROVED' : 'PENDING'}
+                  </span>
+                  <button
+                    onClick={() => toggleApproval(user.uid, user.isApproved)}
+                    disabled={user.email === 'bijoymahmudmunna@gmail.com'}
+                    className={`p-1.5 rounded-lg transition-colors ${user.isApproved ? 'text-rose-500 hover:bg-rose-50' : 'text-emerald-500 hover:bg-emerald-50'} disabled:opacity-30`}
+                    title={user.isApproved ? "Revoke Access" : "Approve User"}
+                  >
+                    {user.isApproved ? <ShieldX className="w-5 h-5" /> : <ShieldCheck className="w-5 h-5" />}
+                  </button>
+                </div>
+
+                <div className="h-8 w-px bg-slate-100 hidden sm:block"></div>
+
+                <div className="flex items-center gap-2">
+                  <select 
+                    value={user.role}
+                    onChange={(e) => updateRole(user.uid, e.target.value as UserRole)}
+                    className="text-xs font-bold py-1.5 px-3 rounded-lg border border-slate-200 bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={user.email === 'bijoymahmudmunna@gmail.com'}
+                  >
+                    <option value="member">Member</option>
+                    <option value="admin">Admin</option>
+                    <option value="super_admin">Super Admin</option>
+                  </select>
+                </div>
               </div>
             </div>
           ))
