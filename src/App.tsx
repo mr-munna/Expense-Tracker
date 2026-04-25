@@ -4725,15 +4725,22 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
             </div>
           </div>
 
-          <a 
-            href="mailto:bijoymahmudmunna@gmail.com?subject=Request%20Sign%20Up%20%2F%20APK%20User"
-            target="_top"
-            rel="noopener noreferrer"
+          <button 
+            onClick={() => {
+              try {
+                navigator.clipboard.writeText("bijoymahmudmunna@gmail.com");
+                alert("Email address (bijoymahmudmunna@gmail.com) copied to clipboard! Please send an email to request access.");
+              } catch (e) {
+                alert("Please send an email to: bijoymahmudmunna@gmail.com to request access.");
+              }
+              // Also try to open mailto as fallback
+              window.open("mailto:bijoymahmudmunna@gmail.com?subject=Request%20Sign%20Up%20%2F%20APK%20User", "_blank");
+            }}
             className="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-2xl bg-white border-2 border-slate-100 text-slate-700 font-bold text-lg hover:bg-slate-50 hover:border-slate-200 transition-all active:scale-[0.98] cursor-pointer"
           >
             <UserPlus className="w-6 h-6 text-[#0D47A1]" />
             Request Sign Up / APK User
-          </a>
+          </button>
           
           <p className="text-xs text-slate-400 px-4">
             Access restricted to authorized personnel only. Please use your company email to sign in.
