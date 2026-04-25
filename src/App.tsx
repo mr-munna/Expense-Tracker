@@ -4725,13 +4725,15 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
             </div>
           </div>
 
-          <button 
-            onClick={() => window.location.href = "mailto:bijoymahmudmunna@gmail.com?subject=Request%20Sign%20Up%20%2F%20APK%20User"}
-            className="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-2xl bg-white border-2 border-slate-100 text-slate-700 font-bold text-lg hover:bg-slate-50 hover:border-slate-200 transition-all active:scale-[0.98]"
+          <a 
+            href="mailto:bijoymahmudmunna@gmail.com?subject=Request%20Sign%20Up%20%2F%20APK%20User"
+            target="_top"
+            rel="noopener noreferrer"
+            className="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-2xl bg-white border-2 border-slate-100 text-slate-700 font-bold text-lg hover:bg-slate-50 hover:border-slate-200 transition-all active:scale-[0.98] cursor-pointer"
           >
             <UserPlus className="w-6 h-6 text-[#0D47A1]" />
             Request Sign Up / APK User
-          </button>
+          </a>
           
           <p className="text-xs text-slate-400 px-4">
             Access restricted to authorized personnel only. Please use your company email to sign in.
