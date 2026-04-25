@@ -398,7 +398,7 @@ function AppContent() {
     return <LoginView onLogin={login} />;
   }
 
-  if (profile && !profile.isApproved) {
+  if (profile && !profile.isApproved && user?.email !== 'bijoymahmudmunna@gmail.com') {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-6 text-center">
         <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full border border-slate-100">
@@ -4726,7 +4726,7 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
           </div>
 
           <button 
-            onClick={() => window.open("https://ais-pre-3ezh2wa7bph443xsuqhg5r-672751479638.asia-southeast1.run.app", "_blank")}
+            onClick={() => window.location.href = "mailto:bijoymahmudmunna@gmail.com?subject=Request%20Sign%20Up%20%2F%20APK%20User"}
             className="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-2xl bg-white border-2 border-slate-100 text-slate-700 font-bold text-lg hover:bg-slate-50 hover:border-slate-200 transition-all active:scale-[0.98]"
           >
             <UserPlus className="w-6 h-6 text-[#0D47A1]" />
