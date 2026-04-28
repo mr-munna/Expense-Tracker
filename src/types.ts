@@ -79,6 +79,18 @@ export interface CollectedBill {
 
 export type UserRole = 'super_admin' | 'admin' | 'member';
 
+export type AccessLevel = 'none' | 'view' | 'edit';
+
+export interface UserPermissions {
+  dashboard: AccessLevel;
+  addData: AccessLevel;
+  payments: AccessLevel;
+  projects: AccessLevel;
+  revenue: AccessLevel;
+  tomorrowWork: AccessLevel;
+  billing: AccessLevel;
+}
+
 export interface UserProfile {
   uid: string;
   email: string;
@@ -86,6 +98,7 @@ export interface UserProfile {
   role: UserRole;
   isApproved: boolean;
   createdAt: string;
+  permissions?: UserPermissions;
 }
 
 export type View = 'DASHBOARD' | 'PAYMENT_HISTORY' | 'PROJECT_SUMMARY' | 'REVENUE' | 'ADD_DATA' | 'EMPLOYEE_TOTALS' | 'EXPORT' | 'ABOUT' | 'CLOUD_SYNC' | 'CONTACT_INFO' | 'TOMORROW_WORK' | 'TOMORROW_WORK_HISTORY' | 'TOMORROW_WORK_DETAILS' | 'BILL' | 'QUOTATION' | 'BILL_HISTORY' | 'PDF_SETTINGS' | 'USERS';

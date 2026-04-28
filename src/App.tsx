@@ -72,6 +72,9 @@ import {
   getRedirectResult,
   signOut, 
   onAuthStateChanged, 
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   doc, 
   getDoc, 
   setDoc, 
@@ -112,7 +115,6 @@ interface AuthContextType {
   isAdmin: boolean;
   isSuperAdmin: boolean;
   isMember: boolean;
-  login: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -124,38 +126,74 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Process redirect result if available (necessary for mobile/WebView logins)
-    getRedirectResult(auth).catch(error => {
-      console.error("Redirect login error:", error);
-      if (error.message.includes("missing initial state")) {
-        alert("WebView Storage Error: Please enable DOM Storage (setDomStorageEnabled) in your Android Studio WebView settings.");
-      } else {
-        alert("Login Error: " + error.message);
-      }
-    });
-
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
         // Get or create profile
-        const userDoc = doc(db, 'users', firebaseUser.uid);
-        const snap = await getDoc(userDoc);
+        const userDocRef = doc(db, 'users', firebaseUser.uid);
+        const snap = await getDoc(userDocRef);
         
+        let currentProfile: UserProfile;
+
         if (snap.exists()) {
-          setProfile(snap.data() as UserProfile);
+          currentProfile = snap.data() as UserProfile;
+          
+          // Migration for existing users to add permissions
+          if (!currentProfile.permissions) {
+             const isSuperAdminEmail = firebaseUser.email === 'bijoymahmudmunna@gmail.com';
+             const isAdmin = currentProfile.role === 'admin' || currentProfile.role === 'super_admin';
+             currentProfile.permissions = {
+                dashboard: isAdmin ? 'edit' : 'view',
+                addData: isAdmin ? 'edit' : 'view',
+                payments: isAdmin ? 'edit' : 'view',
+                projects: isAdmin ? 'edit' : 'view',
+                revenue: isAdmin ? 'edit' : 'view',
+                tomorrowWork: isAdmin ? 'edit' : 'view',
+                billing: isAdmin ? 'edit' : 'view'
+             };
+             if (isSuperAdminEmail) {
+                currentProfile.isApproved = true;
+                currentProfile.role = 'super_admin';
+                currentProfile.permissions = {
+                  dashboard: 'edit',
+                  addData: 'edit',
+                  payments: 'edit',
+                  projects: 'edit',
+                  revenue: 'edit',
+                  tomorrowWork: 'edit',
+                  billing: 'edit'
+                };
+             }
+             await updateDoc(userDocRef, { 
+                permissions: currentProfile.permissions,
+                isApproved: currentProfile.isApproved,
+                role: currentProfile.role
+             });
+          }
+
+          setProfile(currentProfile);
         } else {
           // Default Super Admin for the specific email
           const isDefaultSuperAdmin = firebaseUser.email === 'bijoymahmudmunna@gmail.com';
-          const newProfile: UserProfile = {
+          currentProfile = {
             uid: firebaseUser.uid,
             email: firebaseUser.email || '',
-            displayName: firebaseUser.displayName || 'User',
+            displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
             role: isDefaultSuperAdmin ? 'super_admin' : 'member',
             isApproved: isDefaultSuperAdmin, // Default Super Admin is auto-approved
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            permissions: {
+              dashboard: isDefaultSuperAdmin ? 'edit' : 'none',
+              addData: isDefaultSuperAdmin ? 'edit' : 'none',
+              payments: isDefaultSuperAdmin ? 'edit' : 'none',
+              projects: isDefaultSuperAdmin ? 'edit' : 'none',
+              revenue: isDefaultSuperAdmin ? 'edit' : 'none',
+              tomorrowWork: isDefaultSuperAdmin ? 'edit' : 'none',
+              billing: isDefaultSuperAdmin ? 'edit' : 'none'
+            }
           };
-          await setDoc(userDoc, newProfile);
-          setProfile(newProfile);
+          await setDoc(userDocRef, currentProfile);
+          setProfile(currentProfile);
         }
       } else {
         setProfile(null);
@@ -164,21 +202,6 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     return unsubscribe;
   }, []);
-
-  const login = async () => {
-    try {
-      // Use redirect on mobile/WebView, popup on desktop
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      if (isMobile) {
-        await signInWithRedirect(auth, googleProvider);
-      } else {
-        await signInWithPopup(auth, googleProvider);
-      }
-    } catch (error: any) {
-      console.error("Login failed:", error);
-      alert("Login Error: " + error.message);
-    }
-  };
 
   const logout = async () => {
     try {
@@ -194,7 +217,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const isMember = isApproved && !!profile;
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isAdmin, isSuperAdmin, isMember, login, logout }}>
+    <AuthContext.Provider value={{ user, profile, loading, isAdmin, isSuperAdmin, isMember, logout }}>
       {children}
     </AuthContext.Provider>
   );
@@ -216,7 +239,7 @@ export default function App() {
 }
 
 function AppContent() {
-  const { user, profile, loading, isAdmin, isSuperAdmin, isMember, login, logout } = useAuth();
+  const { user, profile, loading, isAdmin, isSuperAdmin, isMember, logout } = useAuth();
   const [currentView, setCurrentView] = useState<View>('DASHBOARD');
 
   const [payments, setPayments] = useState<EmployeePayment[]>([]);
@@ -395,7 +418,7 @@ function AppContent() {
   }
 
   if (!user) {
-    return <LoginView onLogin={login} />;
+    return <LoginView />;
   }
 
   if (profile && !profile.isApproved && user?.email !== 'bijoymahmudmunna@gmail.com') {
@@ -4693,7 +4716,67 @@ function BillHistoryView({ bills, onEdit, onBack, pdfSettings, isAdmin }: { bill
   );
 }
 
-function LoginView({ onLogin }: { onLogin: () => void }) {
+function LoginView() {
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleResetPassword = async () => {
+    if (!email) {
+      alert("Please enter your email first to reset your password.");
+      return;
+    }
+    try {
+      setLoading(true);
+      await sendPasswordResetEmail(auth, email);
+      alert(`Password reset email sent to ${email}. If you previously logged in with Google, you can set a password this way.`);
+    } catch (error: any) {
+      console.error("Reset error:", error);
+      alert("Reset Error: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      alert("Please enter email and password.");
+      return;
+    }
+    if (!isLogin && password.length < 6) {
+      alert("Password should be at least 6 characters.");
+      return;
+    }
+    setLoading(true);
+    try {
+      if (isLogin) {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        await createUserWithEmailAndPassword(auth, email, password);
+        if (email === 'bijoymahmudmunna@gmail.com') {
+          alert("Super Admin account created successfully!");
+        } else {
+          alert("Account created! Please wait for super admin approval.");
+        }
+      }
+    } catch (error: any) {
+      console.error("Auth error:", error);
+      if (error.code === 'auth/invalid-credential') {
+        alert("Incorrect email or password. If you haven't created an account yet, please click 'Sign up' below. If you previously logged in with Google, click 'Forgot password?' to set a password.");
+      } else if (error.code === 'auth/weak-password') {
+        alert("Password should be at least 6 characters.");
+      } else if (error.code === 'auth/email-already-in-use') {
+        alert("An account with this email already exists. Please switch to 'Sign in'.");
+      } else {
+        alert("Auth Error: " + error.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-6">
       <motion.div 
@@ -4705,45 +4788,98 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
           <ShieldCheck className="w-10 h-10 text-[#0D47A1]" />
         </div>
         <h1 className="text-2xl font-black text-[#1E293B] mb-2 tracking-tight">ALTASMIM ENGINEERING</h1>
-        <p className="text-slate-500 font-medium mb-8">Management System Login</p>
+        <p className="text-slate-500 font-medium mb-8">Management System {isLogin ? 'Login' : 'Signup'}</p>
         
-        <div className="space-y-4">
-          <button 
-            onClick={onLogin}
-            className="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-2xl bg-[#0D47A1] text-white font-bold text-lg hover:bg-[#1565C0] transition-all active:scale-[0.98] shadow-lg shadow-blue-200"
-          >
-            <LogIn className="w-6 h-6" />
-            Sign in with Google
-          </button>
-
-          <div className="relative py-2">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-100"></div>
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-2 text-slate-400 font-medium tracking-widest">New User?</span>
-            </div>
+        <form onSubmit={handleSubmit} className="space-y-4 text-left">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+            <input 
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#0D47A1] focus:border-transparent outline-none"
+              placeholder="Enter your email"
+              required
+            />
           </div>
-
-          <button 
-            onClick={() => {
-              try {
-                navigator.clipboard.writeText("bijoymahmudmunna@gmail.com");
-                alert("Email address (bijoymahmudmunna@gmail.com) copied to clipboard! Please send an email to request access.");
-              } catch (e) {
-                alert("Please send an email to: bijoymahmudmunna@gmail.com to request access.");
-              }
-              // Also try to open mailto as fallback
-              window.open("mailto:bijoymahmudmunna@gmail.com?subject=Request%20Sign%20Up%20%2F%20APK%20User", "_blank");
-            }}
-            className="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-2xl bg-white border-2 border-slate-100 text-slate-700 font-bold text-lg hover:bg-slate-50 hover:border-slate-200 transition-all active:scale-[0.98] cursor-pointer"
-          >
-            <UserPlus className="w-6 h-6 text-[#0D47A1]" />
-            Request Sign Up / APK User
-          </button>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+            <input 
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#0D47A1] focus:border-transparent outline-none"
+              placeholder="Enter password"
+              required
+              minLength={isLogin ? undefined : 6}
+            />
+            {isLogin && (
+              <div className="flex justify-end mt-2">
+                <button
+                  type="button"
+                  onClick={handleResetPassword}
+                  className="text-xs text-[#0D47A1] font-semibold hover:underline"
+                >
+                  Forgot password?
+                </button>
+              </div>
+            )}
+          </div>
           
-          <p className="text-xs text-slate-400 px-4">
-            Access restricted to authorized personnel only. Please use your company email to sign in.
+          <button 
+            type="submit"
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-3 py-4 mt-6 rounded-2xl bg-[#0D47A1] text-white font-bold text-lg hover:bg-[#1565C0] transition-all active:scale-[0.98] shadow-lg shadow-blue-200 disabled:opacity-70"
+          >
+            {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Sign Up')}
+          </button>
+        </form>
+
+        <div className="relative py-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-slate-200"></div>
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-white px-2 text-slate-400 font-medium tracking-widest">Or continue with</span>
+          </div>
+        </div>
+
+        <button 
+          onClick={async () => {
+             try {
+                // Use redirect on mobile/WebView, popup on desktop
+                const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                if (isMobile) {
+                  await signInWithRedirect(auth, googleProvider);
+                } else {
+                  await signInWithPopup(auth, googleProvider);
+                }
+             } catch (error: any) {
+                console.error("Google login failed:", error);
+                alert("Login Error: " + error.message);
+             }
+          }}
+          className="w-full flex items-center justify-center gap-3 py-3.5 px-6 rounded-2xl bg-white border-2 border-slate-100 text-slate-700 font-bold hover:bg-slate-50 transition-all active:scale-[0.98]"
+        >
+          <svg className="w-5 h-5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+          </svg>
+          Google
+        </button>
+
+        <div className="mt-6 pt-6 border-t border-slate-100">
+          <p className="text-sm text-slate-600">
+            {isLogin ? "Don't have an account?" : "Already have an account?"}
+            <button 
+              type="button"
+              onClick={() => setIsLogin(!isLogin)}
+              className="ml-2 font-semibold text-[#0D47A1] hover:underline"
+            >
+              {isLogin ? 'Sign up' : 'Sign in'}
+            </button>
           </p>
         </div>
       </motion.div>
@@ -4758,6 +4894,7 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
 function UserManagementView({ onBack }: { onBack: () => void }) {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingPermissionsUid, setEditingPermissionsUid] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query(collection(db, 'users'));
@@ -4787,6 +4924,26 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const updatePermission = async (uid: string, currentPermissions: any, module: string, newLevel: AccessLevel) => {
+    try {
+      const updatedPermissions = { ...currentPermissions, [module]: newLevel };
+      await updateDoc(doc(db, 'users', uid), { permissions: updatedPermissions });
+    } catch (error) {
+      console.error("Failed to update permission:", error);
+      alert("Failed to update permission. You might not have permission.");
+    }
+  };
+
+  const modules = [
+    { key: 'dashboard', label: 'Dashboard' },
+    { key: 'addData', label: 'Add Data' },
+    { key: 'payments', label: 'Payments' },
+    { key: 'projects', label: 'Projects' },
+    { key: 'revenue', label: 'Revenue' },
+    { key: 'tomorrowWork', label: 'Tomorrow Work' },
+    { key: 'billing', label: 'Billing' },
+  ];
+
   return (
     <div className="space-y-6 pb-20">
       <div className="flex items-center justify-between">
@@ -4803,47 +4960,80 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
           <div className="text-center py-10 text-slate-400">Loading users...</div>
         ) : (
           users.map(user => (
-            <div key={user.uid} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${user.isApproved ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
-                  {user.displayName.charAt(0)}
+            <div key={user.uid} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-4">
+              <div className="flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${user.isApproved ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
+                    {user.displayName?.charAt(0) || 'U'}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-800 truncate">{user.displayName}</p>
+                    <p className="text-xs text-slate-500 truncate">{user.email}</p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="font-bold text-slate-800 truncate">{user.displayName}</p>
-                  <p className="text-xs text-slate-500 truncate">{user.email}</p>
+                
+                <div className="flex items-center gap-3 ml-auto sm:ml-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${user.isApproved ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+                      {user.isApproved ? 'APPROVED' : 'PENDING'}
+                    </span>
+                    <button
+                      onClick={() => toggleApproval(user.uid, user.isApproved)}
+                      disabled={user.email === 'bijoymahmudmunna@gmail.com'}
+                      className={`p-1.5 rounded-lg transition-colors ${user.isApproved ? 'text-rose-500 hover:bg-rose-50' : 'text-emerald-500 hover:bg-emerald-50'} disabled:opacity-30`}
+                      title={user.isApproved ? "Revoke Access" : "Approve User"}
+                    >
+                      {user.isApproved ? <ShieldX className="w-5 h-5" /> : <ShieldCheck className="w-5 h-5" />}
+                    </button>
+                  </div>
+
+                  <div className="h-8 w-px bg-slate-100 hidden sm:block"></div>
+
+                  <div className="flex items-center gap-2">
+                    <select 
+                      value={user.role}
+                      onChange={(e) => updateRole(user.uid, e.target.value as UserRole)}
+                      className="text-xs font-bold py-1.5 px-3 rounded-lg border border-slate-200 bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={user.email === 'bijoymahmudmunna@gmail.com'}
+                    >
+                      <option value="member">Member</option>
+                      <option value="admin">Admin</option>
+                      <option value="super_admin">Super Admin</option>
+                    </select>
+
+                    <button 
+                      onClick={() => setEditingPermissionsUid(editingPermissionsUid === user.uid ? null : user.uid)}
+                      className="text-xs font-bold py-1.5 px-3 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                      disabled={user.email === 'bijoymahmudmunna@gmail.com'}
+                    >
+                      {editingPermissionsUid === user.uid ? 'Hide Perms' : 'Edit Perms'}
+                    </button>
+                  </div>
                 </div>
               </div>
-              
-              <div className="flex items-center gap-3 ml-auto sm:ml-0">
-                <div className="flex items-center gap-2">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${user.isApproved ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
-                    {user.isApproved ? 'APPROVED' : 'PENDING'}
-                  </span>
-                  <button
-                    onClick={() => toggleApproval(user.uid, user.isApproved)}
-                    disabled={user.email === 'bijoymahmudmunna@gmail.com'}
-                    className={`p-1.5 rounded-lg transition-colors ${user.isApproved ? 'text-rose-500 hover:bg-rose-50' : 'text-emerald-500 hover:bg-emerald-50'} disabled:opacity-30`}
-                    title={user.isApproved ? "Revoke Access" : "Approve User"}
-                  >
-                    {user.isApproved ? <ShieldX className="w-5 h-5" /> : <ShieldCheck className="w-5 h-5" />}
-                  </button>
-                </div>
 
-                <div className="h-8 w-px bg-slate-100 hidden sm:block"></div>
-
-                <div className="flex items-center gap-2">
-                  <select 
-                    value={user.role}
-                    onChange={(e) => updateRole(user.uid, e.target.value as UserRole)}
-                    className="text-xs font-bold py-1.5 px-3 rounded-lg border border-slate-200 bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
-                    disabled={user.email === 'bijoymahmudmunna@gmail.com'}
-                  >
-                    <option value="member">Member</option>
-                    <option value="admin">Admin</option>
-                    <option value="super_admin">Super Admin</option>
-                  </select>
+              {editingPermissionsUid === user.uid && user.permissions && (
+                <div className="mt-2 p-4 bg-slate-50 rounded-xl border border-slate-100 text-sm">
+                  <h4 className="font-bold text-slate-700 mb-3 text-xs uppercase tracking-wider">Module Permissions</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {modules.map(({key, label}) => (
+                      <div key={key} className="flex flex-col bg-white p-2 rounded-lg border border-slate-100 shadow-sm">
+                        <span className="text-xs font-semibold text-slate-500 mb-1">{label}</span>
+                        <select 
+                          value={(user.permissions as any)[key] || 'none'}
+                          onChange={(e) => updatePermission(user.uid, user.permissions, key, e.target.value as AccessLevel)}
+                          className="text-xs font-bold py-1.5 px-2 rounded -lg bg-slate-50 border border-slate-200"
+                          disabled={user.email === 'bijoymahmudmunna@gmail.com'}
+                        >
+                          <option value="none">None</option>
+                          <option value="view">Read Only</option>
+                          <option value="edit">Edit / Add</option>
+                        </select>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           ))
         )}
