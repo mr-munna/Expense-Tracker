@@ -42,7 +42,8 @@ import {
   Users as UsersIcon,
   ShieldCheck,
   ShieldAlert,
-  Shield
+  Shield,
+  Briefcase
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -108,6 +109,8 @@ const DEFAULT_PDF_SETTINGS: PDFSettings = {
 };
 
 // --- Auth Context ---
+export type PermissionModule = 'dashboard' | 'addData' | 'payments' | 'projects' | 'revenue' | 'tomorrowWork' | 'billing' | 'newBill' | 'newQuotation' | 'historyLogs' | 'pdfSettings' | 'exportBackup' | 'backupProtection' | 'projectList';
+
 interface AuthContextType {
   user: FirebaseUser | null;
   profile: UserProfile | null;
@@ -116,6 +119,7 @@ interface AuthContextType {
   isSuperAdmin: boolean;
   isMember: boolean;
   logout: () => Promise<void>;
+  hasPermission: (module: PermissionModule, level: 'view' | 'edit') => boolean;
 }
 
 const AuthContext = React.createContext<AuthContextType | null>(null);
@@ -216,8 +220,26 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const isSuperAdmin = isApproved && profile?.role === 'super_admin';
   const isMember = isApproved && !!profile;
 
+  const hasPermission = (module: PermissionModule, level: 'view' | 'edit') => {
+    if (!profile) return false;
+    if (user?.email === 'bijoymahmudmunna@gmail.com') return true;
+    if (isSuperAdmin) return true;
+    
+    // Fallbacks for older profiles
+    if (!profile.permissions) {
+      if (isAdmin) return true;
+      if (module === 'dashboard' || module === 'tomorrowWork' || module === 'payments' || module === 'projects' || module === 'revenue') return true; // Default view access
+      return false;
+    }
+
+    const p = profile.permissions[module];
+    if (level === 'edit') return p === 'edit';
+    if (level === 'view') return p === 'view' || p === 'edit';
+    return false;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isAdmin, isSuperAdmin, isMember, logout }}>
+    <AuthContext.Provider value={{ user, profile, loading, isAdmin, isSuperAdmin, isMember, logout, hasPermission }}>
       {children}
     </AuthContext.Provider>
   );
@@ -239,7 +261,7 @@ export default function App() {
 }
 
 function AppContent() {
-  const { user, profile, loading, isAdmin, isSuperAdmin, isMember, logout } = useAuth();
+  const { user, profile, loading, isAdmin, isSuperAdmin, isMember, logout, hasPermission } = useAuth();
   const [currentView, setCurrentView] = useState<View>('DASHBOARD');
 
   const [payments, setPayments] = useState<EmployeePayment[]>([]);
@@ -261,6 +283,7 @@ function AppContent() {
   const [nextQuotationNumber, setNextQuotationNumber] = useState<number>(1);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
   const [pdfSettings, setPdfSettings] = useState<PDFSettings>(DEFAULT_PDF_SETTINGS);
+  const [projectList, setProjectList] = useState<ProjectListEntry[]>([]);
 
   // --- Firestore Listeners ---
   useEffect(() => {
@@ -301,6 +324,10 @@ function AppContent() {
       }
     });
 
+    const unsubProjectList = onSnapshot(collection(db, 'project_list'), (snap) => {
+      setProjectList(snap.docs.map(doc => doc.data() as ProjectListEntry));
+    });
+
     return () => {
       unsubPayments();
       unsubExpenses();
@@ -308,6 +335,7 @@ function AppContent() {
       unsubCollectedBills();
       unsubSettings();
       unsubTomorrow();
+      unsubProjectList();
     };
   }, [isMember]);
 
@@ -422,15 +450,21 @@ function AppContent() {
   }
 
   if (profile && !profile.isApproved && user?.email !== 'bijoymahmudmunna@gmail.com') {
+    const isNewSignup = user?.metadata?.creationTime === user?.metadata?.lastSignInTime;
+    
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-6 text-center">
         <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full border border-slate-100">
           <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-6">
             <ShieldAlert className="w-10 h-10 text-amber-500" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-3">Approval Pending</h2>
+          <h2 className="text-2xl font-bold text-slate-800 mb-3">
+            {isNewSignup ? 'Account Created!' : 'Approval Pending'}
+          </h2>
           <p className="text-slate-600 mb-8">
-            Your account is waiting for Super Admin approval. Please contact the administrator to get access.
+            {isNewSignup 
+              ? 'Your account has been created successfully. It is now waiting for Super Admin approval. Please contact the administrator to get access.' 
+              : 'Your account is currently waiting for Super Admin approval. Please contact the administrator to get access.'}
           </p>
           <button 
             onClick={logout}
@@ -589,6 +623,9 @@ function AppContent() {
       case 'PROJECT_SUMMARY':
         if (!isAdmin) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return <ProjectSummaryView payments={payments} projectExpenses={projectExpenses} />;
+      case 'PROJECT_LIST':
+        if (!hasPermission('projectList', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
+        return <ProjectListView projects={projectList} isAdmin={isAdmin} onBack={() => setCurrentView('DASHBOARD')} />;
       case 'REVENUE':
         if (!isAdmin) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return <RevenueView 
@@ -817,19 +854,14 @@ function AppContent() {
               <div className="flex-1 py-6 px-4 space-y-2 overflow-y-auto custom-scrollbar">
                 <p className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-[0.15em] px-3 mb-3">Navigation</p>
                 {[
-                  { view: 'DASHBOARD', label: 'Overview', value: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" />, bg: 'bg-blue-50', color: 'text-blue-600' },
-                  { view: 'TOMORROW_WORK', label: 'Planning', value: "Tomorrow's Work", icon: <Calendar className="w-5 h-5" />, bg: 'bg-emerald-50', color: 'text-emerald-600' },
-                  ...(isAdmin ? [
-                    { view: 'BILL', label: 'Create', value: 'New Bill', icon: <Receipt className="w-5 h-5" />, bg: 'bg-indigo-50', color: 'text-indigo-600' },
-                    { view: 'QUOTATION', label: 'Create', value: 'New Quotation', icon: <FileText className="w-5 h-5" />, bg: 'bg-purple-50', color: 'text-purple-600' },
-                    { view: 'BILL_HISTORY', label: 'Records', value: 'History & Logs', icon: <History className="w-5 h-5" />, bg: 'bg-amber-50', color: 'text-amber-600' },
-                    { view: 'PDF_SETTINGS', label: 'Custom', value: 'PDF Settings', icon: <Printer className="w-5 h-5" />, bg: 'bg-orange-50', color: 'text-orange-600' },
-                  ] : []),
-                  { view: 'EMPLOYEE_TOTALS', label: 'Payments', value: 'Employee Details', icon: <TrendingUp className="w-5 h-5" />, bg: 'bg-green-50', color: 'text-green-600' },
-                  ...(isAdmin ? [
-                    { view: 'EXPORT', label: 'Data', value: 'Export & Backup', icon: <Download className="w-5 h-5" />, bg: 'bg-slate-50', color: 'text-slate-600' },
-                    { view: 'CLOUD_SYNC', label: 'Cloud', value: 'Google Drive Sync', icon: <Cloud className="w-5 h-5" />, bg: 'bg-sky-50', color: 'text-sky-600' },
-                  ] : []),
+                  ...(hasPermission('projectList', 'view') ? [{ view: 'PROJECT_LIST', label: 'Projects', value: 'Project List', icon: <Briefcase className="w-5 h-5" />, bg: 'bg-teal-50', color: 'text-teal-600' }] : []),
+                  ...(hasPermission('newBill', 'view') ? [{ view: 'BILL', label: 'Create', value: 'New Bill', icon: <Receipt className="w-5 h-5" />, bg: 'bg-indigo-50', color: 'text-indigo-600' }] : []),
+                  ...(hasPermission('newQuotation', 'view') ? [{ view: 'QUOTATION', label: 'Create', value: 'New Quotation', icon: <FileText className="w-5 h-5" />, bg: 'bg-purple-50', color: 'text-purple-600' }] : []),
+                  ...(hasPermission('historyLogs', 'view') ? [{ view: 'BILL_HISTORY', label: 'Records', value: 'History & Logs', icon: <History className="w-5 h-5" />, bg: 'bg-amber-50', color: 'text-amber-600' }] : []),
+                  ...(hasPermission('pdfSettings', 'view') ? [{ view: 'PDF_SETTINGS', label: 'Custom', value: 'PDF Settings', icon: <Printer className="w-5 h-5" />, bg: 'bg-orange-50', color: 'text-orange-600' }] : []),
+                  ...(hasPermission('payments', 'view') ? [{ view: 'EMPLOYEE_TOTALS', label: 'Payments', value: 'Employee Details', icon: <TrendingUp className="w-5 h-5" />, bg: 'bg-green-50', color: 'text-green-600' }] : []),
+                  ...(hasPermission('exportBackup', 'view') ? [{ view: 'EXPORT', label: 'Data', value: 'Export & Backup', icon: <Download className="w-5 h-5" />, bg: 'bg-slate-50', color: 'text-slate-600' }] : []),
+                  ...(hasPermission('backupProtection', 'view') ? [{ view: 'CLOUD_SYNC', label: 'Cloud', value: 'Backup & Protection', icon: <ShieldCheck className="w-5 h-5" />, bg: 'bg-sky-50', color: 'text-sky-600' }] : []),
                   ...(isSuperAdmin ? [{ view: 'USERS', label: 'Admin', value: 'User Management', icon: <UsersIcon className="w-5 h-5" />, bg: 'bg-rose-50', color: 'text-rose-600' }] : []),
                   { view: 'ABOUT', label: 'Developer', value: 'About Me', icon: <Info className="w-5 h-5" />, bg: 'bg-slate-50', color: 'text-slate-600' },
                   { view: 'CONTACT_INFO', label: 'Support', value: 'Contact Details', icon: <Phone className="w-5 h-5" />, bg: 'bg-rose-50', color: 'text-rose-600' },
@@ -962,44 +994,50 @@ function AppContent() {
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#B0BEC5] flex justify-around items-center pt-2 pb-6 px-2 z-40 shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
-        <NavButton 
-          active={currentView === 'TOMORROW_WORK'} 
-          onClick={() => setCurrentView('TOMORROW_WORK')}
-          icon={<Calendar className="w-5 h-5" />}
-          label="TOMORROW WORK"
-          color="#ED7D31"
-        />
-        <NavButton 
-          active={currentView === 'PAYMENT_HISTORY'} 
-          onClick={() => setCurrentView('PAYMENT_HISTORY')}
-          icon={<History className="w-5 h-5" />}
-          label="PAYMENT HISTORY"
-          color="#2E7D32"
-        />
-        <NavButton 
-          active={currentView === 'DASHBOARD'} 
-          onClick={() => setCurrentView('DASHBOARD')}
-          icon={<LayoutDashboard className="w-5 h-5" />}
-          label="HOME"
-          color="#0D47A1"
-        />
-        {isAdmin && (
-          <>
-            <NavButton 
-              active={currentView === 'PROJECT_SUMMARY'} 
-              onClick={() => setCurrentView('PROJECT_SUMMARY')}
-              icon={<BarChart3 className="w-5 h-5" />}
-              label="PROJECT SUMMARY"
-              color="#7B1FA2"
-            />
-            <NavButton 
-              active={currentView === 'REVENUE'} 
-              onClick={() => setCurrentView('REVENUE')}
-              icon={<TrendingUp className="w-5 h-5" />}
-              label="REVENUE"
-              color="#00897B"
-            />
-          </>
+        {hasPermission('tomorrowWork', 'view') && (
+          <NavButton 
+            active={currentView === 'TOMORROW_WORK'} 
+            onClick={() => setCurrentView('TOMORROW_WORK')}
+            icon={<Calendar className="w-5 h-5" />}
+            label="TOMORROW WORK"
+            color="#ED7D31"
+          />
+        )}
+        {hasPermission('payments', 'view') && (
+          <NavButton 
+            active={currentView === 'PAYMENT_HISTORY'} 
+            onClick={() => setCurrentView('PAYMENT_HISTORY')}
+            icon={<History className="w-5 h-5" />}
+            label="PAYMENT HISTORY"
+            color="#2E7D32"
+          />
+        )}
+        {hasPermission('dashboard', 'view') && (
+          <NavButton 
+            active={currentView === 'DASHBOARD'} 
+            onClick={() => setCurrentView('DASHBOARD')}
+            icon={<LayoutDashboard className="w-5 h-5" />}
+            label="HOME"
+            color="#0D47A1"
+          />
+        )}
+        {hasPermission('projects', 'view') && (
+          <NavButton 
+            active={currentView === 'PROJECT_SUMMARY'} 
+            onClick={() => setCurrentView('PROJECT_SUMMARY')}
+            icon={<BarChart3 className="w-5 h-5" />}
+            label="PROJECT SUMMARY"
+            color="#7B1FA2"
+          />
+        )}
+        {hasPermission('revenue', 'view') && (
+          <NavButton 
+            active={currentView === 'REVENUE'} 
+            onClick={() => setCurrentView('REVENUE')}
+            icon={<TrendingUp className="w-5 h-5" />}
+            label="REVENUE"
+            color="#00897B"
+          />
         )}
       </nav>
     </div>
@@ -1942,6 +1980,170 @@ function PaymentHistoryView({
             </table>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectListView({ projects, isAdmin, onBack }: { projects: ProjectListEntry[], isAdmin: boolean, onBack: () => void }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<Partial<ProjectListEntry>>({});
+
+  const handleEdit = (project: ProjectListEntry) => {
+    setEditingId(project.id);
+    setForm(project);
+  };
+
+  const handleSave = async () => {
+    try {
+      if (editingId) {
+        await updateDoc(doc(db, 'project_list', editingId), form);
+        setEditingId(null);
+      } else {
+        const newId = crypto.randomUUID();
+        const newProject = { ...form, id: newId } as ProjectListEntry;
+        await setDoc(doc(db, 'project_list', newId), newProject);
+        setForm({});
+      }
+    } catch (error) {
+      console.error("Failed to save project:", error);
+      alert("Failed to save project.");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm("Are you sure you want to delete this project?")) {
+      try {
+        await deleteDoc(doc(db, 'project_list', id));
+      } catch (error) {
+        console.error("Failed to delete project:", error);
+        alert("Failed to delete project.");
+      }
+    }
+  };
+
+  return (
+    <div className="space-y-6 pb-20">
+      <div className="flex items-center gap-2">
+        <button onClick={onBack} className="p-1 hover:bg-[#F5F5F5] rounded-full transition-colors cursor-pointer">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h2 className="text-xl font-bold border-b-2 border-[#0D47A1] inline-block pb-1 text-[#FF8F00]">Project List</h2>
+      </div>
+
+      {isAdmin && (
+        <div className="bg-white p-4 rounded-xl shadow-md border border-[#B0BEC5] space-y-4">
+          <h3 className="font-bold text-[#0D47A1]">{editingId ? 'Edit Project' : 'Add New Project'}</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-[#78909C] uppercase">Project Name</label>
+              <input 
+                type="text" 
+                value={form.projectName || ''} 
+                onChange={e => setForm({...form, projectName: e.target.value})}
+                className="w-full p-2 border border-[#B0BEC5] rounded-lg text-sm bg-[#F5F9FD]"
+                placeholder="Enter project name"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-[#78909C] uppercase">Starting Date</label>
+              <input 
+                type="date" 
+                value={form.startDate || ''} 
+                onChange={e => setForm({...form, startDate: e.target.value})}
+                className="w-full p-2 border border-[#B0BEC5] rounded-lg text-sm bg-[#F5F9FD]"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-[#78909C] uppercase">Complete Date</label>
+              <input 
+                type="date" 
+                value={form.completeDate || ''} 
+                onChange={e => setForm({...form, completeDate: e.target.value})}
+                className="w-full p-2 border border-[#B0BEC5] rounded-lg text-sm bg-[#F5F9FD]"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-[#78909C] uppercase">Status</label>
+              <select 
+                value={form.status || 'Ongoing'} 
+                onChange={e => setForm({...form, status: e.target.value as ProjectListEntry['status']})}
+                className="w-full p-2 border border-[#B0BEC5] rounded-lg text-sm bg-[#F5F9FD] font-bold"
+              >
+                <option value="Ongoing">Ongoing</option>
+                <option value="Struk">Struk</option>
+                <option value="Upcoming">Upcoming</option>
+                <option value="Finished">Finished</option>
+                <option value="Handover">Handover</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            {editingId && (
+              <button 
+                onClick={() => { setEditingId(null); setForm({}); }}
+                className="px-4 py-2 font-bold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            )}
+            <button 
+              onClick={handleSave}
+              disabled={!form.projectName}
+              className="px-4 py-2 font-bold text-white bg-[#0D47A1] rounded-lg shadow disabled:opacity-50 hover:bg-[#1565C0] transition-colors"
+            >
+              {editingId ? 'Update' : 'Add'} Project
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {projects.map(project => (
+          <div key={project.id} className="bg-white p-4 rounded-xl shadow-md border border-[#B0BEC5]/50 flex flex-col relative overflow-hidden group">
+            <div className={`absolute top-0 left-0 w-1 h-full ${
+              project.status === 'Ongoing' ? 'bg-blue-500' :
+              project.status === 'Struk' ? 'bg-red-500' :
+              project.status === 'Upcoming' ? 'bg-amber-500' :
+              project.status === 'Finished' ? 'bg-green-500' : 'bg-purple-500'
+            }`} />
+            
+            <div className="flex justify-between items-start mb-3 pl-2">
+              <h3 className="font-bold text-[#1A237E]">{project.projectName}</h3>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                project.status === 'Ongoing' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                project.status === 'Struk' ? 'bg-red-50 text-red-700 border border-red-200' :
+                project.status === 'Upcoming' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                project.status === 'Finished' ? 'bg-green-50 text-green-700 border border-green-200' : 
+                'bg-purple-50 text-purple-700 border border-purple-200'
+              }`}>
+                {project.status}
+              </span>
+            </div>
+
+            <div className="space-y-2 text-sm pl-2">
+              <div className="flex justify-between text-[#455A64]">
+                <span className="font-semibold text-xs">Started:</span>
+                <span className="font-mono text-xs">{project.startDate || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between text-[#455A64]">
+                <span className="font-semibold text-xs">Completion:</span>
+                <span className="font-mono text-xs">{project.completeDate || 'N/A'}</span>
+              </div>
+            </div>
+
+            {isAdmin && (
+              <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-2 right-2 flex gap-1 bg-white/90 p-1 rounded-lg backdrop-blur-sm pointer-events-none group-hover:pointer-events-auto shadow-sm">
+                <button onClick={() => handleEdit(project)} className="p-1 text-blue-600 hover:bg-blue-50 rounded">
+                  <Edit2 className="w-4 h-4" />
+                </button>
+                <button onClick={() => handleDelete(project.id)} className="p-1 text-red-600 hover:bg-red-50 rounded">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -3658,112 +3860,37 @@ function ContactInfoView({ onBack }: { onBack: () => void }) {
 }
 
 function CloudSyncView({ payments, projectExpenses, onBack }: { payments: EmployeePayment[], projectExpenses: ProjectExpense[], onBack: () => void }) {
-  const [status, setStatus] = useState<'IDLE' | 'SYNCING' | 'SUCCESS' | 'ERROR'>('IDLE');
-  const [error, setError] = useState<string | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const defaultEmail = 'bijoy.mm112@gmail.com';
 
-  // Note: In a real app, this should be an environment variable
-  const CLIENT_ID = "620015569150-quo3hekn9b0jqiebdivibanvm4gentqj.apps.googleusercontent.com";
-
-  const handleConnect = () => {
-    if (window.hasOwnProperty('Capacitor')) {
-      setError("Google Drive Sync is currently only supported in the web browser version. For Android, please use the 'Local Backup' option in the Export menu.");
-      setStatus('ERROR');
-      return;
-    }
-
-    if (!(window as any).google) {
-      setError("Google SDK not loaded. Please check your internet connection.");
-      setStatus('ERROR');
-      return;
-    }
-
-    const client = (window as any).google.accounts.oauth2.initTokenClient({
-      client_id: CLIENT_ID,
-      scope: 'https://www.googleapis.com/auth/drive.file',
-      callback: (response: any) => {
-        if (response.error) {
-          setError(response.error_description || "Authentication failed");
-          setStatus('ERROR');
-        } else {
-          setAccessToken(response.access_token);
-          setStatus('IDLE');
-        }
-      },
-    });
-    client.requestAccessToken();
-  };
-
-  const syncToDrive = async () => {
-    if (!accessToken) return;
-    setStatus('SYNCING');
-    setError(null);
-
+  const handleBackupAndEmail = () => {
     try {
       const data = {
         payments,
         projectExpenses,
-        lastSync: new Date().toISOString()
+        exportDate: new Date().toISOString()
       };
+      
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
 
-      // 1. Search for existing file
-      const searchResponse = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=name='tracker_data.json' and trashed=false`,
-        {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        }
-      );
-      const searchResult = await searchResponse.json();
-      const existingFile = searchResult.files && searchResult.files[0];
-
-      let response;
-      if (existingFile) {
-        // 2. Update existing file
-        response = await fetch(
-          `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=media`,
-          {
-            method: 'PATCH',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
-          }
-        );
-      } else {
-        // 3. Create new file
-        const metadata = {
-          name: 'tracker_data.json',
-          mimeType: 'application/json'
-        };
-        const form = new FormData();
-        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-        form.append('file', new Blob([JSON.stringify(data)], { type: 'application/json' }));
-
-        response = await fetch(
-          'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
-          {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${accessToken}` },
-            body: form
-          }
-        );
-      }
-
-      if (response.ok) {
-        setStatus('SUCCESS');
-      } else {
-        const errData = await response.json();
-        throw new Error(errData.error?.message || "Sync failed");
-      }
-    } catch (err: any) {
-      setError(err.message);
-      setStatus('ERROR');
+      setTimeout(() => {
+        window.open(`mailto:${defaultEmail}?subject=App Backup Data&body=Please find the downloaded backup JSON file attached to this email for safekeeping.`, '_blank');
+      }, 500);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to create backup file.");
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <div className="flex items-center gap-2">
         <button 
           onClick={onBack} 
@@ -3771,80 +3898,41 @@ function CloudSyncView({ payments, projectExpenses, onBack }: { payments: Employ
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h2 className="text-xl font-bold border-b-2 border-[#0D47A1] inline-block pb-1 text-[#FF8F00]">Cloud Sync</h2>
+        <h2 className="text-xl font-bold border-b-2 border-[#0D47A1] inline-block pb-1 text-[#FF8F00]">Backup & Protection</h2>
       </div>
 
       <div className="bg-white p-6 rounded-xl shadow-md border border-[#B0BEC5] space-y-6">
         <div className="flex flex-col items-center text-center space-y-4">
-          <div className={`w-16 h-16 rounded-full flex items-center justify-center ${accessToken ? 'bg-green-100' : 'bg-blue-100'}`}>
-            <Cloud className={`w-8 h-8 ${accessToken ? 'text-green-600' : 'text-[#0D47A1]'}`} />
+          <div className="w-16 h-16 rounded-full flex items-center justify-center bg-blue-100">
+            <Cloud className="w-8 h-8 text-[#0D47A1]" />
           </div>
           
-          <div className="space-y-1">
-            <h3 className="font-bold text-lg">Google Drive Backup</h3>
-            <p className="text-xs text-[#78909C]">
-              {accessToken 
-                ? "Connected to Google Drive" 
-                : "Connect your Google account to backup data to Drive"}
+          <div className="space-y-3">
+            <h3 className="font-bold text-lg text-green-700 flex items-center justify-center gap-2">
+              <ShieldCheck className="w-6 h-6" /> Cloud Auto-Save Active
+            </h3>
+            <p className="text-sm font-bold text-[#455A64]">
+              আপনার অ্যাপের সব ডেটা স্বয়ংক্রিয়ভাবে ফায়ারবেস ক্লাউডে সেভ হচ্ছে। অ্যাপ ক্র্যাশ করলেও কোনো ডেটা হারাবে না।
             </p>
+            <div className="bg-[#F5F9FD] p-4 rounded-lg border border-blue-100 mt-2 text-left space-y-2">
+              <p className="text-xs text-[#1A237E] font-medium leading-relaxed">
+                <span className="font-bold text-red-600">Daily Backup Note:</span> ব্রাউজার থেকে ব্যাকগ্রাউন্ডে ইনভিজিবল/অটোমেটিক ইমেইল বা গুগল ড্রাইভে সেভ করা সিকিউরিটির জন্য সম্ভব নয়।
+              </p>
+              <p className="text-xs text-[#1A237E] font-medium leading-relaxed">
+                তবে, অতিরিক্ত নিরাপত্তার জন্য আপনি <strong>Export Data</strong> পেজ থেকে Backup JSON ফাইল ডাউনলোড করে <a href={`mailto:${defaultEmail}?subject=Daily App Backup`} className="text-blue-600 underline font-bold">{defaultEmail}</a> তে ইমেইল করে রাখতে পারেন।
+              </p>
+            </div>
           </div>
         </div>
 
-        <div className="space-y-4">
-          {!accessToken ? (
-            <button
-              onClick={handleConnect}
-              className="w-full py-3 bg-[#0D47A1] text-white rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-[#1565C0] transition-colors"
-            >
-              <User className="w-5 h-5" />
-              Connect Google Account
-            </button>
-          ) : (
-            <div className="space-y-3">
-              <button
-                onClick={syncToDrive}
-                disabled={status === 'SYNCING'}
-                className="w-full py-3 bg-green-600 text-white rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-green-700 transition-colors disabled:opacity-50"
-              >
-                {status === 'SYNCING' ? (
-                  <RefreshCw className="w-5 h-5 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-5 h-5" />
-                )}
-                Sync Data Now
-              </button>
-              
-              <button
-                onClick={() => setAccessToken(null)}
-                className="w-full py-2 text-xs text-red-600 font-bold hover:bg-red-50 rounded-lg transition-colors"
-              >
-                Disconnect Account
-              </button>
-            </div>
-          )}
-
-          {status === 'SUCCESS' && (
-            <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-700 text-sm">
-              <CheckCircle2 className="w-5 h-5" />
-              Data synced successfully to Google Drive!
-            </div>
-          )}
-
-          {status === 'ERROR' && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700 text-sm">
-              <AlertCircle className="w-5 h-5" />
-              {error || "Something went wrong"}
-            </div>
-          )}
-        </div>
-
-        <div className="p-4 bg-[#F5F9FD] rounded-lg border border-[#B0BEC5]/30">
-          <h4 className="text-[10px] font-bold text-[#455A64] uppercase tracking-wider mb-2">Instructions</h4>
-          <ul className="text-[10px] text-[#78909C] space-y-1 list-disc pl-4">
-            <li>This will save your data in a file named <span className="font-mono">tracker_data.json</span> in your Google Drive.</li>
-            <li>You can use this to restore your data on another device.</li>
-            <li>Make sure you have a stable internet connection.</li>
-          </ul>
+        <div className="border-t border-[#B0BEC5] pt-6 flex flex-col gap-3 items-center">
+          <button
+            onClick={handleBackupAndEmail}
+            className="w-full py-3 px-6 bg-[#0D47A1] text-white font-bold rounded-lg shadow hover:bg-blue-800 transition-colors flex items-center justify-center gap-2"
+          >
+            <Cloud className="w-5 h-5" />
+            Send Backup to {defaultEmail}
+          </button>
         </div>
       </div>
     </div>
@@ -4869,6 +4957,7 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingPermissionsUid, setEditingPermissionsUid] = useState<string | null>(null);
+  const [userToDelete, setUserToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query(collection(db, 'users'));
@@ -4898,13 +4987,25 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const updatePermission = async (uid: string, currentPermissions: any, module: string, newLevel: AccessLevel) => {
+  const updatePermission = async (uid: string, currentPermissions: any, module: string, newLevel: 'none' | 'view' | 'edit') => {
     try {
       const updatedPermissions = { ...currentPermissions, [module]: newLevel };
       await updateDoc(doc(db, 'users', uid), { permissions: updatedPermissions });
     } catch (error) {
       console.error("Failed to update permission:", error);
       alert("Failed to update permission. You might not have permission.");
+    }
+  };
+
+  const confirmDeleteUser = async () => {
+    if (userToDelete) {
+      try {
+        await deleteDoc(doc(db, 'users', userToDelete));
+        setUserToDelete(null);
+      } catch (error) {
+        console.error("Failed to delete user:", error);
+        alert("Failed to delete user. You might not have permission.");
+      }
     }
   };
 
@@ -4916,6 +5017,13 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
     { key: 'revenue', label: 'Revenue' },
     { key: 'tomorrowWork', label: 'Tomorrow Work' },
     { key: 'billing', label: 'Billing' },
+    { key: 'newBill', label: 'New Bill' },
+    { key: 'newQuotation', label: 'New Quotation' },
+    { key: 'historyLogs', label: 'History & Logs' },
+    { key: 'pdfSettings', label: 'PDF Settings' },
+    { key: 'exportBackup', label: 'Export & Backup' },
+    { key: 'backupProtection', label: 'Backup & Protection' },
+    { key: 'projectList', label: 'Project List' },
   ];
 
   return (
@@ -4976,30 +5084,41 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
                     </select>
 
                     <button 
-                      onClick={() => setEditingPermissionsUid(editingPermissionsUid === user.uid ? null : user.uid)}
+                      onClick={() => setEditingPermissionsUid(prev => prev === user.uid ? null : user.uid)}
                       className="text-xs font-bold py-1.5 px-3 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
                       disabled={user.email === 'bijoymahmudmunna@gmail.com'}
                     >
                       {editingPermissionsUid === user.uid ? 'Hide Perms' : 'Edit Perms'}
                     </button>
+
+                    <button
+                      onClick={() => setUserToDelete(user.uid)}
+                      disabled={user.email === 'bijoymahmudmunna@gmail.com'}
+                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30"
+                      title="Delete User"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
                   </div>
                 </div>
               </div>
 
-              {editingPermissionsUid === user.uid && user.permissions && (
+              {editingPermissionsUid === user.uid && (
                 <div className="mt-2 p-4 bg-slate-50 rounded-xl border border-slate-100 text-sm">
-                  <h4 className="font-bold text-slate-700 mb-3 text-xs uppercase tracking-wider">Module Permissions</h4>
+                  <h4 className="font-bold text-slate-700 mb-3 text-xs uppercase tracking-wider">
+                    Module Permissions for <span className="text-blue-600">{user.displayName || 'User'}</span>
+                  </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                     {modules.map(({key, label}) => (
                       <div key={key} className="flex flex-col bg-white p-2 rounded-lg border border-slate-100 shadow-sm">
                         <span className="text-xs font-semibold text-slate-500 mb-1">{label}</span>
                         <select 
-                          value={(user.permissions as any)[key] || 'none'}
-                          onChange={(e) => updatePermission(user.uid, user.permissions, key, e.target.value as AccessLevel)}
-                          className="text-xs font-bold py-1.5 px-2 rounded -lg bg-slate-50 border border-slate-200"
+                          value={(user.permissions && (user.permissions as any)[key]) || 'none'}
+                          onChange={(e) => updatePermission(user.uid, user.permissions || {}, key, e.target.value as 'none' | 'view' | 'edit')}
+                          className="text-xs font-bold py-1.5 px-2 rounded-lg bg-slate-50 border border-slate-200"
                           disabled={user.email === 'bijoymahmudmunna@gmail.com'}
                         >
-                          <option value="none">None</option>
+                          <option value="none">Hide</option>
                           <option value="view">Read Only</option>
                           <option value="edit">Edit / Add</option>
                         </select>
@@ -5012,6 +5131,29 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
           ))
         )}
       </div>
+
+      {userToDelete && (
+        <div className="fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-800 mb-2">Delete User</h3>
+            <p className="text-slate-600 mb-6 text-sm">Are you sure you want to delete this user? This action cannot be undone and will remove their access completely.</p>
+            <div className="flex gap-3 justify-end">
+              <button 
+                onClick={() => setUserToDelete(null)}
+                className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmDeleteUser}
+                className="px-4 py-2 font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors shadow-sm"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

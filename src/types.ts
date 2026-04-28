@@ -101,4 +101,12 @@ export interface UserProfile {
   permissions?: UserPermissions;
 }
 
-export type View = 'DASHBOARD' | 'PAYMENT_HISTORY' | 'PROJECT_SUMMARY' | 'REVENUE' | 'ADD_DATA' | 'EMPLOYEE_TOTALS' | 'EXPORT' | 'ABOUT' | 'CLOUD_SYNC' | 'CONTACT_INFO' | 'TOMORROW_WORK' | 'TOMORROW_WORK_HISTORY' | 'TOMORROW_WORK_DETAILS' | 'BILL' | 'QUOTATION' | 'BILL_HISTORY' | 'PDF_SETTINGS' | 'USERS';
+export interface ProjectListEntry {
+  id: string;
+  projectName: string;
+  startDate: string;
+  status: 'Ongoing' | 'Struk' | 'Upcoming' | 'Finished' | 'Handover';
+  completeDate: string;
+}
+
+export type View = 'DASHBOARD' | 'PAYMENT_HISTORY' | 'PROJECT_SUMMARY' | 'REVENUE' | 'ADD_DATA' | 'EMPLOYEE_TOTALS' | 'EXPORT' | 'ABOUT' | 'CLOUD_SYNC' | 'CONTACT_INFO' | 'TOMORROW_WORK' | 'TOMORROW_WORK_HISTORY' | 'TOMORROW_WORK_DETAILS' | 'BILL' | 'QUOTATION' | 'BILL_HISTORY' | 'PDF_SETTINGS' | 'USERS' | 'PROJECT_LIST';

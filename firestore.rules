@@ -112,6 +112,11 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    match /project_list/{id} {
+      allow read: if isMember();
+      allow create, update, delete: if isAdmin();
+    }
+
     match /settings/{id} {
       allow read: if isMember();
       allow write: if (id == 'tomorrowWork' && isMember()) || isAdmin();

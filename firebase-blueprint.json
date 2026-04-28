@@ -74,6 +74,19 @@
       },
       "required": ["id", "type", "billNumber", "date", "recipientName", "site", "items", "grandTotal"]
     },
+    "ProjectListEntry": {
+      "title": "Project List Entry",
+      "description": "Definition of a project in the master project list",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectName": { "type": "string" },
+        "startDate": { "type": "string" },
+        "status": { "type": "string", "enum": ["Ongoing", "Struk", "Upcoming", "Finished", "Handover"] },
+        "completeDate": { "type": "string" }
+      },
+      "required": ["id", "projectName"]
+    },
     "CollectedBill": {
       "title": "Collected Bill",
       "description": "Record of collected bills from clients",
@@ -117,6 +130,10 @@
     "/collectedBills/{id}": {
       "schema": "CollectedBill",
       "description": "Collected bills"
+    },
+    "/project_list/{id}": {
+      "schema": "ProjectListEntry",
+      "description": "Master list of projects"
     },
     "/settings/{id}": {
       "schema": "Settings",
