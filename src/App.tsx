@@ -388,6 +388,75 @@ function AppContent() {
   const [pdfSettings, setPdfSettings] = useState<PDFSettings>(DEFAULT_PDF_SETTINGS);
   const [projectList, setProjectList] = useState<ProjectListEntry[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [activeAlarm, setActiveAlarm] = useState<Meeting | null>(null);
+
+  // --- Foreground Alarm Logic ---
+  useEffect(() => {
+    // Request basic browser notification permission
+    if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+      Notification.requestPermission();
+    }
+
+    if (meetings.length === 0) return;
+
+    const playBeep = () => {
+      try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.type = 'sine';
+        oscillator.frequency.value = 800;
+        gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1);
+        oscillator.start(audioCtx.currentTime);
+        oscillator.stop(audioCtx.currentTime + 1);
+      } catch (e) {
+        console.error("Audio play failed", e);
+      }
+    };
+
+    const checkAlarms = () => {
+      const now = new Date();
+      const alertedMeetings = JSON.parse(localStorage.getItem('alertedMeetings') || '[]');
+
+      meetings.forEach(meeting => {
+        if (!meeting.reminderEnabled) return;
+        if (alertedMeetings.includes(meeting.id)) return;
+
+        const meetingTime = new Date(`${meeting.meetingDate}T${meeting.meetingTime}`);
+        const diffMs = meetingTime.getTime() - now.getTime();
+
+        // If meeting is exactly happening now or within the last 2 minutes
+        if (diffMs <= 0 && diffMs > -120000) {
+          // Play Beep 3 times
+          playBeep();
+          setTimeout(playBeep, 500);
+          setTimeout(playBeep, 1000);
+
+          // Show browser notification
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(`Meeting: ${meeting.clientName}`, {
+              body: `Your meeting is starting now!\nAgenda: ${meeting.agenda}`,
+              icon: 'https://placehold.jp/dc2626/ffffff/192x192.png?text=AE'
+            });
+            if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300]);
+          }
+
+          // Show in-app alert
+          setActiveAlarm(meeting);
+
+          // Mark as alerted
+          alertedMeetings.push(meeting.id);
+          localStorage.setItem('alertedMeetings', JSON.stringify(alertedMeetings));
+        }
+      });
+    };
+
+    const intervalId = setInterval(checkAlarms, 10000); // Check every 10 seconds
+    return () => clearInterval(intervalId);
+  }, [meetings]);
 
   // --- Firestore Listeners ---
   useEffect(() => {
@@ -971,6 +1040,44 @@ function AppContent() {
 
   return (
     <div className="h-screen bg-[#E8F0F8] text-[#1A237E] font-sans flex flex-col overflow-hidden">
+      {/* Alarm Modal */}
+      <AnimatePresence>
+        {activeAlarm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden border border-fuchsia-100 p-6 flex flex-col items-center text-center"
+            >
+              <div className="w-16 h-16 bg-fuchsia-100 text-fuchsia-600 rounded-full flex items-center justify-center mb-4 animate-pulse">
+                <BellRing className="w-8 h-8" />
+              </div>
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight mb-2">Meeting Reminder!</h2>
+              <p className="text-lg font-bold text-fuchsia-600 mb-1">{activeAlarm.clientName}</p>
+              <div className="bg-slate-50 w-full p-4 rounded-xl border border-slate-100 my-4 text-left">
+                <p className="text-sm font-semibold text-slate-500 mb-1 uppercase tracking-widest text-[10px]">Agenda</p>
+                <p className="text-slate-700">{activeAlarm.agenda}</p>
+              </div>
+              <button 
+                onClick={() => {
+                   setActiveAlarm(null);
+                   if (navigator.vibrate) navigator.vibrate(0);
+                }}
+                className="w-full py-3 bg-[#0D47A1] text-white font-bold rounded-xl shadow-md hover:bg-[#1565C0] transition-colors"
+               >
+                Dismiss
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Sidebar Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
