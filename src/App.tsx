@@ -30,6 +30,7 @@ import {
   Github,
   Globe,
   Eye,
+  Check,
   PieChart as PieChartIcon,
   Receipt,
   FileText,
@@ -63,7 +64,7 @@ import {
   YAxis, 
   CartesianGrid 
 } from 'recharts';
-import { EmployeePayment, ProjectExpense, View, TomorrowWorkRow, Bill, BillItem, PDFSettings, UserRole, UserProfile, CollectedBill } from './types';
+import { EmployeePayment, ProjectExpense, View, TomorrowWorkRow, Bill, BillItem, PDFSettings, UserRole, UserProfile, CollectedBill, ProjectListEntry } from './types';
 import { 
   auth, 
   db, 
@@ -133,27 +134,33 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
-        // Get or create profile
+        // Get profile
         const userDocRef = doc(db, 'users', firebaseUser.uid);
         const snap = await getDoc(userDocRef);
         
-        let currentProfile: UserProfile;
-
         if (snap.exists()) {
-          currentProfile = snap.data() as UserProfile;
+          let currentProfile = snap.data() as UserProfile;
           
           // Migration for existing users to add permissions
           if (!currentProfile.permissions) {
              const isSuperAdminEmail = firebaseUser.email === 'bijoymahmudmunna@gmail.com';
              const isAdmin = currentProfile.role === 'admin' || currentProfile.role === 'super_admin';
+             const defaultLevel = isAdmin ? 'edit' : 'view';
              currentProfile.permissions = {
-                dashboard: isAdmin ? 'edit' : 'view',
-                addData: isAdmin ? 'edit' : 'view',
-                payments: isAdmin ? 'edit' : 'view',
-                projects: isAdmin ? 'edit' : 'view',
-                revenue: isAdmin ? 'edit' : 'view',
-                tomorrowWork: isAdmin ? 'edit' : 'view',
-                billing: isAdmin ? 'edit' : 'view'
+                dashboard: defaultLevel,
+                addData: defaultLevel,
+                payments: defaultLevel,
+                projects: defaultLevel,
+                revenue: defaultLevel,
+                tomorrowWork: defaultLevel,
+                billing: defaultLevel,
+                newBill: defaultLevel,
+                newQuotation: defaultLevel,
+                historyLogs: defaultLevel,
+                pdfSettings: defaultLevel,
+                exportBackup: defaultLevel,
+                backupProtection: defaultLevel,
+                projectList: defaultLevel
              };
              if (isSuperAdminEmail) {
                 currentProfile.isApproved = true;
@@ -165,7 +172,14 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
                   projects: 'edit',
                   revenue: 'edit',
                   tomorrowWork: 'edit',
-                  billing: 'edit'
+                  billing: 'edit',
+                  newBill: 'edit',
+                  newQuotation: 'edit',
+                  historyLogs: 'edit',
+                  pdfSettings: 'edit',
+                  exportBackup: 'edit',
+                  backupProtection: 'edit',
+                  projectList: 'edit'
                 };
              }
              await updateDoc(userDocRef, { 
@@ -174,30 +188,62 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
                 role: currentProfile.role
              });
           }
+          
+          // Ensure all keys exist in permissions if they added new ones
+          const expectedKeys = ['dashboard', 'addData', 'payments', 'projects', 'revenue', 'tomorrowWork', 'billing', 'newBill', 'newQuotation', 'historyLogs', 'pdfSettings', 'exportBackup', 'backupProtection', 'projectList'];
+          let needsUpdate = false;
+          if (currentProfile.permissions) {
+            expectedKeys.forEach(key => {
+              if (!(currentProfile.permissions as any)[key]) {
+                (currentProfile.permissions as any)[key] = (currentProfile.role === 'super_admin' || currentProfile.role === 'admin') ? 'edit' : 'none';
+                needsUpdate = true;
+              }
+            });
+            if (needsUpdate) {
+              await updateDoc(userDocRef, { permissions: currentProfile.permissions });
+            }
+          }
 
           setProfile(currentProfile);
+          
+          // Sync photoURL if missing
+          if (!currentProfile.photoURL && firebaseUser.photoURL) {
+            await updateDoc(userDocRef, { photoURL: firebaseUser.photoURL });
+          }
         } else {
-          // Default Super Admin for the specific email
-          const isDefaultSuperAdmin = firebaseUser.email === 'bijoymahmudmunna@gmail.com';
-          currentProfile = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email || '',
-            displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
-            role: isDefaultSuperAdmin ? 'super_admin' : 'member',
-            isApproved: isDefaultSuperAdmin, // Default Super Admin is auto-approved
-            createdAt: new Date().toISOString(),
-            permissions: {
-              dashboard: isDefaultSuperAdmin ? 'edit' : 'none',
-              addData: isDefaultSuperAdmin ? 'edit' : 'none',
-              payments: isDefaultSuperAdmin ? 'edit' : 'none',
-              projects: isDefaultSuperAdmin ? 'edit' : 'none',
-              revenue: isDefaultSuperAdmin ? 'edit' : 'none',
-              tomorrowWork: isDefaultSuperAdmin ? 'edit' : 'none',
-              billing: isDefaultSuperAdmin ? 'edit' : 'none'
-            }
-          };
-          await setDoc(userDocRef, currentProfile);
-          setProfile(currentProfile);
+          // If profile doesn't exist, we don't automatically create it anymore (as per user request)
+          // except for the super admin email for bootstrapping
+    const isSuperAdminEmail = firebaseUser.email === 'bijoymahmudmunna@gmail.com';
+    if (isSuperAdminEmail) {
+       const superAdminProfile: UserProfile = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName || 'Super Admin',
+          role: 'super_admin',
+          isApproved: true,
+          createdAt: new Date().toISOString(),
+          permissions: {
+            dashboard: 'edit',
+            addData: 'edit',
+            payments: 'edit',
+            projects: 'edit',
+            revenue: 'edit',
+            tomorrowWork: 'edit',
+            billing: 'edit',
+            newBill: 'edit',
+            newQuotation: 'edit',
+            historyLogs: 'edit',
+            pdfSettings: 'edit',
+            exportBackup: 'edit',
+            backupProtection: 'edit',
+            projectList: 'edit'
+          }
+       };
+       await setDoc(userDocRef, superAdminProfile);
+       setProfile(superAdminProfile);
+    } else {
+       setProfile(null);
+    }
         }
       } else {
         setProfile(null);
@@ -374,7 +420,10 @@ function AppContent() {
       });
     });
 
-    setProjectSuggestions(Array.from(projects).sort());
+    setProjectSuggestions(Array.from(new Set([
+      ...projects,
+      ...projectList.map(p => p.projectName)
+    ])).sort());
     setAddressSuggestions(Array.from(addresses).sort());
     setWorkSuggestions(Array.from(works).sort());
     setManpowerSuggestions(Array.from(manpower).sort());
@@ -605,6 +654,7 @@ function AppContent() {
       case 'DASHBOARD':
         return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
       case 'PAYMENT_HISTORY':
+        if (!hasPermission('payments', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return (
           <PaymentHistoryView 
             payments={payments} 
@@ -617,17 +667,17 @@ function AppContent() {
             onDeleteProject={deleteProjectExpense}
             onDeleteProjects={deleteProjectExpenses}
             onUpdateProject={updateProjectExpense}
-            isAdmin={isAdmin}
+            isAdmin={hasPermission('payments', 'edit')}
           />
         );
       case 'PROJECT_SUMMARY':
-        if (!isAdmin) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
+        if (!hasPermission('projects', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return <ProjectSummaryView payments={payments} projectExpenses={projectExpenses} />;
       case 'PROJECT_LIST':
         if (!hasPermission('projectList', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
-        return <ProjectListView projects={projectList} isAdmin={isAdmin} onBack={() => setCurrentView('DASHBOARD')} />;
+        return <ProjectListView projects={projectList} isAdmin={hasPermission('projectList', 'edit')} onBack={() => setCurrentView('DASHBOARD')} />;
       case 'REVENUE':
-        if (!isAdmin) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
+        if (!hasPermission('revenue', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return <RevenueView 
           projectExpenses={projectExpenses} 
           payments={payments} 
@@ -635,12 +685,15 @@ function AppContent() {
           onAddCollectedBill={addCollectedBill}
           onDeleteCollectedBill={deleteCollectedBill}
           onUpdateBudget={updateProjectBudget} 
-          isAdmin={isAdmin} 
+          isAdmin={hasPermission('revenue', 'edit')} 
+          isSuperAdmin={isSuperAdmin}
+          projectList={projectList}
         />;
       case 'EMPLOYEE_TOTALS':
+        if (!hasPermission('payments', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return <EmployeeTotalsView payments={payments} onBack={() => setCurrentView('DASHBOARD')} />;
       case 'EXPORT':
-        if (!isAdmin) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
+        if (!hasPermission('exportBackup', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return <ExportView 
           payments={payments} 
           projectExpenses={projectExpenses} 
@@ -663,11 +716,12 @@ function AppContent() {
           onContactClick={() => setCurrentView('CONTACT_INFO')}
         />;
       case 'CLOUD_SYNC':
-        if (!isAdmin) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
+        if (!hasPermission('backupProtection', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return <CloudSyncView payments={payments} projectExpenses={projectExpenses} onBack={() => setCurrentView('DASHBOARD')} />;
       case 'CONTACT_INFO':
         return <ContactInfoView onBack={() => setCurrentView('DASHBOARD')} />;
       case 'TOMORROW_WORK':
+        if (!hasPermission('tomorrowWork', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return (
           <TomorrowWorkView 
             rows={currentTomorrowWorkRows} 
@@ -684,7 +738,7 @@ function AppContent() {
             setDate={setTomorrowWorkDate}
             onBack={() => setCurrentView('DASHBOARD')} 
             onViewHistory={() => setCurrentView('TOMORROW_WORK_HISTORY')}
-            isAdmin={isAdmin}
+            isAdmin={hasPermission('tomorrowWork', 'edit')}
             onSave={async () => {
               const isDataEmpty = currentTomorrowWorkRows.every(row => 
                 !row.projectName.trim() && 
@@ -720,9 +774,10 @@ function AppContent() {
           />
         );
       case 'ADD_DATA':
-        if (!isAdmin) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
-        return <AddDataView onAddPayment={addPayment} onAddProject={addProjectExpense} onBack={() => setCurrentView('DASHBOARD')} payments={payments} projectExpenses={projectExpenses} />;
+        if (!hasPermission('addData', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
+        return <AddDataView onAddPayment={addPayment} onAddProject={addProjectExpense} onBack={() => setCurrentView('DASHBOARD')} payments={payments} projectExpenses={projectExpenses} projectList={projectList} />;
       case 'TOMORROW_WORK_HISTORY':
+        if (!hasPermission('tomorrowWork', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return (
           <TomorrowWorkHistoryView 
             data={tomorrowWorkData} 
@@ -731,7 +786,7 @@ function AppContent() {
               setTomorrowWorkDate(date);
               setCurrentView('TOMORROW_WORK');
             }}
-            isAdmin={isAdmin}
+            isAdmin={hasPermission('tomorrowWork', 'edit')}
             onDeleteDate={async (date) => {
               const newData = { ...tomorrowWorkData };
               delete newData[date];
@@ -740,7 +795,7 @@ function AppContent() {
           />
         );
       case 'BILL':
-        if (!isAdmin) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
+        if (!hasPermission('newBill', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return (
           <BillView 
             type="BILL" 
@@ -764,7 +819,7 @@ function AppContent() {
           />
         );
       case 'QUOTATION':
-        if (!isAdmin) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
+        if (!hasPermission('newQuotation', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return (
           <BillView 
             type="QUOTATION" 
@@ -788,7 +843,7 @@ function AppContent() {
           />
         );
       case 'BILL_HISTORY':
-        if (!isAdmin) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
+        if (!hasPermission('historyLogs', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return (
           <BillHistoryView 
             bills={bills} 
@@ -798,11 +853,11 @@ function AppContent() {
             }}
             onBack={() => setCurrentView('DASHBOARD')}
             pdfSettings={pdfSettings}
-            isAdmin={isAdmin}
+            isAdmin={hasPermission('historyLogs', 'edit')}
           />
         );
       case 'PDF_SETTINGS':
-        if (!isAdmin) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
+        if (!hasPermission('pdfSettings', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return <PDFSettingsView settings={pdfSettings} onSave={updatePdfSettings} onBack={() => setCurrentView('DASHBOARD')} />;
       case 'USERS':
         return isSuperAdmin ? <UserManagementView onBack={() => setCurrentView('DASHBOARD')} /> : <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
@@ -872,7 +927,7 @@ function AppContent() {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.04, type: 'spring', stiffness: 100 }}
                     onClick={() => { setCurrentView(item.view as View); setIsSidebarOpen(false); }}
-                    className={`w-full flex items-center gap-3.5 p-2.5 rounded-xl transition-all active:scale-[0.97] group relative overflow-hidden text-left ${
+                    className={`w-full flex items-center gap-3.5 p-2.5 rounded-xl transition-all active:scale-[0.97] group relative overflow-hidden text-left cursor-pointer ${
                       currentView === item.view 
                         ? 'bg-white shadow-md border border-blue-100' 
                         : 'hover:bg-white/60 border border-transparent hover:border-slate-200'
@@ -899,8 +954,12 @@ function AppContent() {
               {/* Sidebar Footer */}
               <div className="p-6 border-t border-slate-100 bg-slate-50/50">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-full bg-[#0D47A1] flex items-center justify-center text-white font-bold shadow-sm">
-                    {user?.displayName?.charAt(0) || 'U'}
+                  <div className="w-10 h-10 rounded-full bg-[#0D47A1] overflow-hidden flex items-center justify-center text-white font-bold shadow-sm">
+                    {user?.photoURL ? (
+                      <img src={user.photoURL} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      user?.displayName?.charAt(0) || 'U'
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-[#1E293B] truncate">{user?.displayName}</p>
@@ -912,7 +971,7 @@ function AppContent() {
                 </div>
                 <button 
                   onClick={logout}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 hover:text-rose-600 hover:border-rose-200 transition-all active:scale-[0.98]"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 hover:text-rose-600 hover:border-rose-200 transition-all active:scale-[0.98] cursor-pointer"
                 >
                   <LogOut className="w-4 h-4" />
                   Sign Out
@@ -958,7 +1017,7 @@ function AppContent() {
       </main>
 
       {/* Floating Action Button */}
-      {currentView === 'DASHBOARD' && isAdmin && (
+      {currentView === 'DASHBOARD' && hasPermission('addData', 'edit') && (
         <button
           onClick={() => setCurrentView('ADD_DATA')}
           className="fixed bottom-32 right-6 w-14 h-14 bg-[#0D47A1] text-white rounded-lg shadow-lg flex flex-col items-center justify-center hover:bg-[#1565C0] hover:scale-110 active:scale-95 transition-all cursor-pointer z-50"
@@ -975,7 +1034,7 @@ function AppContent() {
             href="https://www.al-tasmim.net" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="text-xs font-bold text-[#0D47A1] hover:underline"
+            className="text-xs font-bold text-[#0D47A1] hover:underline cursor-pointer"
           >
             www.al-tasmim.net
           </a>
@@ -1338,12 +1397,13 @@ function DashboardView({ stats, payments, projectExpenses, onDetails }: {
   );
 }
 
-function AddDataView({ onAddPayment, onAddProject, onBack, payments, projectExpenses }: { 
+function AddDataView({ onAddPayment, onAddProject, onBack, payments, projectExpenses, projectList }: { 
   onAddPayment: (p: Omit<EmployeePayment, 'id'>) => void, 
   onAddProject: (p: Omit<ProjectExpense, 'id'>) => void,
   onBack: () => void,
   payments: EmployeePayment[],
-  projectExpenses: ProjectExpense[]
+  projectExpenses: ProjectExpense[],
+  projectList: ProjectListEntry[]
 }) {
   const [empForm, setEmpForm] = useState({
     uniqueId: 'ATE-' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0'),
@@ -1373,7 +1433,7 @@ function AddDataView({ onAddPayment, onAddProject, onBack, payments, projectExpe
 
   const projectNames = Array.from(
     new Map(
-      [...payments.map(p => p.projectName), ...projectExpenses.map(p => p.projectName)]
+      [...payments.map(p => p.projectName), ...projectExpenses.map(p => p.projectName), ...projectList.map(p => p.projectName)]
         .filter(Boolean)
         .map(name => [name.trim().toLowerCase(), name.trim()])
     ).values()
@@ -1987,11 +2047,13 @@ function PaymentHistoryView({
 
 function ProjectListView({ projects, isAdmin, onBack }: { projects: ProjectListEntry[], isAdmin: boolean, onBack: () => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState<Partial<ProjectListEntry>>({});
 
   const handleEdit = (project: ProjectListEntry) => {
     setEditingId(project.id);
     setForm(project);
+    setShowAddForm(true);
   };
 
   const handleSave = async () => {
@@ -2003,8 +2065,9 @@ function ProjectListView({ projects, isAdmin, onBack }: { projects: ProjectListE
         const newId = crypto.randomUUID();
         const newProject = { ...form, id: newId } as ProjectListEntry;
         await setDoc(doc(db, 'project_list', newId), newProject);
-        setForm({});
       }
+      setForm({});
+      setShowAddForm(false);
     } catch (error) {
       console.error("Failed to save project:", error);
       alert("Failed to save project.");
@@ -2023,7 +2086,7 @@ function ProjectListView({ projects, isAdmin, onBack }: { projects: ProjectListE
   };
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-40 relative min-h-[600px]">
       <div className="flex items-center gap-2">
         <button onClick={onBack} className="p-1 hover:bg-[#F5F5F5] rounded-full transition-colors cursor-pointer">
           <ArrowLeft className="w-5 h-5" />
@@ -2031,120 +2094,157 @@ function ProjectListView({ projects, isAdmin, onBack }: { projects: ProjectListE
         <h2 className="text-xl font-bold border-b-2 border-[#0D47A1] inline-block pb-1 text-[#FF8F00]">Project List</h2>
       </div>
 
-      {isAdmin && (
-        <div className="bg-white p-4 rounded-xl shadow-md border border-[#B0BEC5] space-y-4">
-          <h3 className="font-bold text-[#0D47A1]">{editingId ? 'Edit Project' : 'Add New Project'}</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-[#78909C] uppercase">Project Name</label>
-              <input 
-                type="text" 
-                value={form.projectName || ''} 
-                onChange={e => setForm({...form, projectName: e.target.value})}
-                className="w-full p-2 border border-[#B0BEC5] rounded-lg text-sm bg-[#F5F9FD]"
-                placeholder="Enter project name"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-[#78909C] uppercase">Starting Date</label>
-              <input 
-                type="date" 
-                value={form.startDate || ''} 
-                onChange={e => setForm({...form, startDate: e.target.value})}
-                className="w-full p-2 border border-[#B0BEC5] rounded-lg text-sm bg-[#F5F9FD]"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-[#78909C] uppercase">Complete Date</label>
-              <input 
-                type="date" 
-                value={form.completeDate || ''} 
-                onChange={e => setForm({...form, completeDate: e.target.value})}
-                className="w-full p-2 border border-[#B0BEC5] rounded-lg text-sm bg-[#F5F9FD]"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-[#78909C] uppercase">Status</label>
-              <select 
-                value={form.status || 'Ongoing'} 
-                onChange={e => setForm({...form, status: e.target.value as ProjectListEntry['status']})}
-                className="w-full p-2 border border-[#B0BEC5] rounded-lg text-sm bg-[#F5F9FD] font-bold"
-              >
-                <option value="Ongoing">Ongoing</option>
-                <option value="Struk">Struk</option>
-                <option value="Upcoming">Upcoming</option>
-                <option value="Finished">Finished</option>
-                <option value="Handover">Handover</option>
-              </select>
-            </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {projects.length === 0 ? (
+          <div className="col-span-full py-20 text-center bg-white rounded-2xl border-2 border-dashed border-slate-200">
+            <Briefcase className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+            <p className="text-slate-500 font-medium">No projects saved yet.</p>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
-            {editingId && (
-              <button 
-                onClick={() => { setEditingId(null); setForm({}); }}
-                className="px-4 py-2 font-bold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-            )}
+        ) : (
+          projects.map(project => (
+            <div key={project.id} className="bg-white p-4 rounded-xl shadow-md border border-[#B0BEC5]/50 flex flex-col relative overflow-hidden group">
+              <div className={`absolute top-0 left-0 w-1 h-full ${
+                project.status === 'Ongoing' ? 'bg-blue-500' :
+                project.status === 'Struk' ? 'bg-red-500' :
+                project.status === 'Upcoming' ? 'bg-amber-500' :
+                project.status === 'Finished' ? 'bg-green-500' : 'bg-purple-500'
+              }`} />
+              
+              <div className="flex justify-between items-start mb-3 pl-2">
+                <h3 className="font-bold text-[#1A237E]">{project.projectName}</h3>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  project.status === 'Ongoing' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                  project.status === 'Struk' ? 'bg-red-50 text-red-700 border border-red-200' :
+                  project.status === 'Upcoming' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                  project.status === 'Finished' ? 'bg-green-50 text-green-700 border border-green-200' : 
+                  'bg-purple-50 text-purple-700 border border-purple-200'
+                }`}>
+                  {project.status}
+                </span>
+              </div>
+
+              <div className="space-y-2 text-sm pl-2">
+                <div className="flex justify-between text-[#455A64]">
+                  <span className="font-semibold text-xs">Started:</span>
+                  <span className="font-mono text-xs">{project.startDate || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between text-[#455A64]">
+                  <span className="font-semibold text-xs">Completion:</span>
+                  <span className="font-mono text-xs">{project.completeDate || 'N/A'}</span>
+                </div>
+              </div>
+
+              {isAdmin && (
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-2 right-2 flex gap-1 bg-white/90 p-1 rounded-lg backdrop-blur-sm pointer-events-none group-hover:pointer-events-auto shadow-sm">
+                  <button onClick={() => handleEdit(project)} className="p-1 text-blue-600 hover:bg-blue-50 rounded">
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => handleDelete(project.id)} className="p-1 text-red-600 hover:bg-red-50 rounded cursor-pointer">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
+      {isAdmin && (
+        <>
+          <div className="fixed bottom-48 right-6 z-50">
             <button 
-              onClick={handleSave}
-              disabled={!form.projectName}
-              className="px-4 py-2 font-bold text-white bg-[#0D47A1] rounded-lg shadow disabled:opacity-50 hover:bg-[#1565C0] transition-colors"
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="bg-[#0D47A1] text-white p-3 rounded-full shadow-2xl hover:bg-[#1565C0] transition-all active:scale-95 group flex items-center gap-2 px-5 cursor-pointer"
             >
-              {editingId ? 'Update' : 'Add'} Project
+              <Plus className={`w-5 h-5 transition-transform ${showAddForm ? 'rotate-45' : ''}`} />
+              <span className="font-bold text-sm">Add Project</span>
             </button>
           </div>
-        </div>
-      )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {projects.map(project => (
-          <div key={project.id} className="bg-white p-4 rounded-xl shadow-md border border-[#B0BEC5]/50 flex flex-col relative overflow-hidden group">
-            <div className={`absolute top-0 left-0 w-1 h-full ${
-              project.status === 'Ongoing' ? 'bg-blue-500' :
-              project.status === 'Struk' ? 'bg-red-500' :
-              project.status === 'Upcoming' ? 'bg-amber-500' :
-              project.status === 'Finished' ? 'bg-green-500' : 'bg-purple-500'
-            }`} />
-            
-            <div className="flex justify-between items-start mb-3 pl-2">
-              <h3 className="font-bold text-[#1A237E]">{project.projectName}</h3>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                project.status === 'Ongoing' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                project.status === 'Struk' ? 'bg-red-50 text-red-700 border border-red-200' :
-                project.status === 'Upcoming' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                project.status === 'Finished' ? 'bg-green-50 text-green-700 border border-green-200' : 
-                'bg-purple-50 text-purple-700 border border-purple-200'
-              }`}>
-                {project.status}
-              </span>
-            </div>
-
-            <div className="space-y-2 text-sm pl-2">
-              <div className="flex justify-between text-[#455A64]">
-                <span className="font-semibold text-xs">Started:</span>
-                <span className="font-mono text-xs">{project.startDate || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between text-[#455A64]">
-                <span className="font-semibold text-xs">Completion:</span>
-                <span className="font-mono text-xs">{project.completeDate || 'N/A'}</span>
-              </div>
-            </div>
-
-            {isAdmin && (
-              <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-2 right-2 flex gap-1 bg-white/90 p-1 rounded-lg backdrop-blur-sm pointer-events-none group-hover:pointer-events-auto shadow-sm">
-                <button onClick={() => handleEdit(project)} className="p-1 text-blue-600 hover:bg-blue-50 rounded">
-                  <Edit2 className="w-4 h-4" />
-                </button>
-                <button onClick={() => handleDelete(project.id)} className="p-1 text-red-600 hover:bg-red-50 rounded">
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
+          <AnimatePresence>
+            {showAddForm && (
+              <motion.div 
+                initial={{ opacity: 0, y: 100 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 100 }}
+                className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4 bg-black/20 backdrop-blur-sm"
+              >
+                <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+                  <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+                    <h3 className="font-bold text-[#0D47A1]">{editingId ? 'Edit Project' : 'Add New Project'}</h3>
+                    <button onClick={() => { setShowAddForm(false); setEditingId(null); setForm({}); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div className="grid grid-cols-1 gap-4 text-left">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-[#78909C] uppercase">Project Name</label>
+                        <input 
+                          type="text" 
+                          value={form.projectName || ''} 
+                          onChange={e => setForm({...form, projectName: e.target.value})}
+                          className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition-all outline-none"
+                          placeholder="Enter project name"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-[#78909C] uppercase">Starting Date</label>
+                          <input 
+                            type="date" 
+                            value={form.startDate || ''} 
+                            onChange={e => setForm({...form, startDate: e.target.value})}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition-all outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-[#78909C] uppercase">Complete Date</label>
+                          <input 
+                            type="date" 
+                            value={form.completeDate || ''} 
+                            onChange={e => setForm({...form, completeDate: e.target.value})}
+                            className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition-all outline-none"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-[#78909C] uppercase">Status</label>
+                        <select 
+                          value={form.status || 'Ongoing'} 
+                          onChange={e => setForm({...form, status: e.target.value as ProjectListEntry['status']})}
+                          className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition-all outline-none font-bold text-blue-600"
+                        >
+                          <option value="Ongoing">Ongoing</option>
+                          <option value="Struk">Struk</option>
+                          <option value="Upcoming">Upcoming</option>
+                          <option value="Finished">Finished</option>
+                          <option value="Handover">Handover</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-3 pt-4">
+                      <button 
+                        onClick={() => { setShowAddForm(false); setEditingId(null); setForm({}); }}
+                        className="px-6 py-2.5 font-bold text-slate-500 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        onClick={handleSave}
+                        disabled={!form.projectName}
+                        className="px-8 py-2.5 font-bold text-white bg-[#0D47A1] rounded-xl shadow-lg border border-blue-700 disabled:opacity-50 hover:bg-[#1565C0] transition-all transform active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+                      >
+                        {editingId ? 'Update' : 'Add'} Project
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
             )}
-          </div>
-        ))}
-      </div>
+          </AnimatePresence>
+        </>
+      )}
     </div>
   );
 }
@@ -2246,7 +2346,9 @@ function RevenueView({
   onUpdateBudget, 
   onAddCollectedBill,
   onDeleteCollectedBill,
-  isAdmin 
+  isAdmin,
+  isSuperAdmin,
+  projectList
 }: { 
   projectExpenses: ProjectExpense[], 
   payments: EmployeePayment[], 
@@ -2254,7 +2356,9 @@ function RevenueView({
   onUpdateBudget: (name: string, budget: number) => void, 
   onAddCollectedBill: (bill: Omit<CollectedBill, 'id'>) => void,
   onDeleteCollectedBill: (id: string) => void,
-  isAdmin: boolean 
+  isAdmin: boolean,
+  isSuperAdmin: boolean,
+  projectList: ProjectListEntry[]
 }) {
   const [activeTab, setActiveTab] = useState<'SUMMARY' | 'COLLECT_BILL'>('SUMMARY');
   const [search, setSearch] = useState('');
@@ -2269,7 +2373,8 @@ function RevenueView({
     const allNames = [
       ...projectExpenses.map(p => p.projectName),
       ...payments.map(p => p.projectName),
-      ...collectedBills.map(b => b.projectName)
+      ...collectedBills.map(b => b.projectName),
+      ...projectList.map(p => p.projectName)
     ].filter(Boolean);
 
     return Array.from(
@@ -2277,7 +2382,7 @@ function RevenueView({
         allNames.map(name => [name.trim().toLowerCase(), name.trim()])
       ).values()
     );
-  }, [projectExpenses, payments, collectedBills]);
+  }, [projectExpenses, payments, collectedBills, projectList]);
 
   const handleCollectBill = async () => {
     if (!collectProject || !collectAmount) return;
@@ -2380,8 +2485,10 @@ function RevenueView({
               <thead className="bg-[#5D9CEC] text-white">
                 <tr>
                   <th className="p-2 border-r border-white/20">Project Name</th>
-                  <th className="p-2 border-r border-white/20">Project Budget</th>
-                  <th className="p-2 border-r border-white/20">Project Cost</th>
+                  <th className="p-2 border-r border-white/20">Budget</th>
+                  <th className="p-2 border-r border-white/20">Collected</th>
+                  <th className="p-2 border-r border-white/20">Total Budget</th>
+                  <th className="p-2 border-r border-white/20">Cost</th>
                   <th className="p-2">Revenue</th>
                 </tr>
               </thead>
@@ -2390,7 +2497,37 @@ function RevenueView({
                   <tr key={p.name} className={i % 2 === 0 ? 'bg-white' : 'bg-[#F5F9FD]'}>
                     <td className="p-2 border-r border-[#B0BEC5]/30">{p.name}</td>
                     <td className="p-2 border-r border-[#B0BEC5]/30 font-bold text-[#0D47A1]">
-                      {formatCurrency(p.totalBudget)}
+                      {editingBudget?.name === p.name ? (
+                        <div className="flex items-center gap-1">
+                          <input 
+                            type="number" 
+                            autoFocus
+                            className="w-20 p-1 border border-blue-400 rounded text-xs no-spinner"
+                            value={editingBudget.value}
+                            onChange={e => setEditingBudget({...editingBudget, value: e.target.value})}
+                          />
+                          <button onClick={handleBudgetSave} className="p-1 text-green-600 bg-green-50 rounded"><Check className="w-3 h-3" /></button>
+                          <button onClick={() => setEditingBudget(null)} className="p-1 text-red-600 bg-red-50 rounded"><X className="w-3 h-3" /></button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center gap-1 group">
+                          <span>{formatCurrency(p.budget)}</span>
+                          {isSuperAdmin && (
+                            <button 
+                              onClick={() => setEditingBudget({ name: p.name, value: p.budget.toString() })}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 text-blue-500 hover:bg-blue-50 rounded transition-opacity"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-2 border-r border-[#B0BEC5]/30 font-bold text-[#2E7D32]">
+                       {formatCurrency(p.collected)}
+                    </td>
+                    <td className="p-2 border-r border-[#B0BEC5]/30 font-bold text-amber-600">
+                       {formatCurrency(p.totalBudget)}
                     </td>
                     <td className="p-2 border-r border-[#B0BEC5]/30">{formatCurrency(p.cost)}</td>
                     <td className={`p-2 font-bold ${p.revenue >= 0 ? 'text-[#2E7D32]' : 'text-[#C62828]'}`}>
@@ -2400,7 +2537,7 @@ function RevenueView({
                 ))}
                 {revenueData.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="p-8 text-[#78909C]">No data found</td>
+                    <td colSpan={6} className="p-8 text-[#78909C]">No data found</td>
                   </tr>
                 )}
               </tbody>
@@ -2464,7 +2601,8 @@ function RevenueView({
                   <tr>
                     <th className="p-2 border-r border-white/20">Date</th>
                     <th className="p-2 border-r border-white/20">Project Name</th>
-                    <th className="p-2">Amount</th>
+                    <th className="p-2 border-r border-white/20">Amount</th>
+                    {isSuperAdmin && <th className="p-2">Action</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -2472,9 +2610,23 @@ function RevenueView({
                     <tr key={bill.id} className={i % 2 === 0 ? 'bg-white' : 'bg-[#F5F9FD]'}>
                       <td className="p-2 border-r border-[#B0BEC5]/30 whitespace-nowrap">{bill.date}</td>
                       <td className="p-2 border-r border-[#B0BEC5]/30 font-medium">{bill.projectName}</td>
-                      <td className="p-2 font-bold text-[#2E7D32]">
+                      <td className={`p-2 font-bold text-[#2E7D32] ${isSuperAdmin ? 'border-r border-[#B0BEC5]/30' : ''}`}>
                         {formatCurrency(bill.amount)}
                       </td>
+                      {isSuperAdmin && (
+                        <td className="p-2">
+                          <button 
+                            onClick={() => {
+                              if(window.confirm("Delete this collection record?")) {
+                                onDeleteCollectedBill(bill.id);
+                              }
+                            }}
+                            className="p-1 text-red-600 hover:bg-red-50 rounded"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                   {collectedBills.length === 0 && (
@@ -4845,8 +4997,37 @@ function LoginView() {
       if (isLogin) {
         await signInWithEmailAndPassword(auth, email, password);
       } else {
-        await createUserWithEmailAndPassword(auth, email, password);
-        if (email === 'bijoymahmudmunna@gmail.com') {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const firebaseUser = userCredential.user;
+        const isSuperAdminEmail = email === 'bijoymahmudmunna@gmail.com';
+        
+        await setDoc(doc(db, 'users', firebaseUser.uid), {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+          photoURL: firebaseUser.photoURL || '',
+          role: isSuperAdminEmail ? 'super_admin' : 'member',
+          isApproved: isSuperAdminEmail, // Default Super Admin is auto-approved
+          createdAt: new Date().toISOString(),
+          permissions: {
+            dashboard: isSuperAdminEmail ? 'edit' : 'none',
+            addData: isSuperAdminEmail ? 'edit' : 'none',
+            payments: isSuperAdminEmail ? 'edit' : 'none',
+            projects: isSuperAdminEmail ? 'edit' : 'none',
+            revenue: isSuperAdminEmail ? 'edit' : 'none',
+            tomorrowWork: isSuperAdminEmail ? 'edit' : 'none',
+            billing: isSuperAdminEmail ? 'edit' : 'none',
+            newBill: isSuperAdminEmail ? 'edit' : 'none',
+            newQuotation: isSuperAdminEmail ? 'edit' : 'none',
+            historyLogs: isSuperAdminEmail ? 'edit' : 'none',
+            pdfSettings: isSuperAdminEmail ? 'edit' : 'none',
+            exportBackup: isSuperAdminEmail ? 'edit' : 'none',
+            backupProtection: isSuperAdminEmail ? 'edit' : 'none',
+            projectList: isSuperAdminEmail ? 'edit' : 'none'
+          }
+        });
+
+        if (isSuperAdminEmail) {
           setAuthMessage({ type: 'success', text: "Super Admin account created successfully!" });
         } else {
           setAuthMessage({ type: 'success', text: "Account created! Please wait for super admin approval." });
@@ -4869,43 +5050,47 @@ function LoginView() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-6">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      {/* Abstract Background Shapes */}
+      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#295818]/10 rounded-full blur-3xl"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#295818]/5 rounded-full blur-3xl"></div>
+      
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 p-8 text-center"
+        className="w-full max-w-md bg-[#295818] rounded-3xl shadow-2xl p-8 text-center relative z-10"
       >
-        <div className="w-20 h-20 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm border border-blue-100">
-          <ShieldCheck className="w-10 h-10 text-[#0D47A1]" />
+        <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-md border border-white/20">
+          <span className="text-4xl font-black text-[#295818] tracking-tighter">AE</span>
         </div>
-        <h1 className="text-2xl font-black text-[#1E293B] mb-2 tracking-tight">ALTASMIM ENGINEERING</h1>
-        <p className="text-slate-500 font-medium mb-8">Management System {isLogin ? 'Login' : 'Signup'}</p>
+        <h1 className="text-2xl font-black text-white mb-2 tracking-tight">ALTASMIM ENGINEERING</h1>
+        <p className="text-white/70 font-medium mb-8">Management System {isLogin ? 'Login' : 'Signup'}</p>
         
         {authMessage && (
-          <div className={`mb-6 p-4 rounded-xl text-sm font-medium text-left ${authMessage.type === 'error' ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}>
+          <div className={`mb-6 p-4 rounded-xl text-sm font-medium text-left ${authMessage.type === 'error' ? 'bg-red-500/20 text-red-100 border border-red-500/30' : 'bg-emerald-500/20 text-emerald-100 border border-emerald-500/30'}`}>
             {authMessage.text}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4 text-left">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+            <label className="block text-sm font-medium text-white/90 mb-1">Email</label>
             <input 
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#0D47A1] focus:border-transparent outline-none"
+              className="w-full p-3 bg-white/10 border border-white/20 rounded-xl focus:ring-2 focus:ring-white focus:border-transparent outline-none text-white placeholder:text-white/40"
               placeholder="Enter your email"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+            <label className="block text-sm font-medium text-white/90 mb-1">Password</label>
             <input 
               type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#0D47A1] focus:border-transparent outline-none"
+              className="w-full p-3 bg-white/10 border border-white/20 rounded-xl focus:ring-2 focus:ring-white focus:border-transparent outline-none text-white placeholder:text-white/40"
               placeholder="Enter password"
               required
               minLength={isLogin ? undefined : 6}
@@ -4915,7 +5100,7 @@ function LoginView() {
                 <button
                   type="button"
                   onClick={handleResetPassword}
-                  className="text-xs text-[#0D47A1] font-semibold hover:underline"
+                  className="text-xs text-white/70 font-semibold hover:text-white hover:underline cursor-pointer"
                 >
                   Forgot password?
                 </button>
@@ -4926,19 +5111,19 @@ function LoginView() {
           <button 
             type="submit"
             disabled={loading}
-            className="w-full flex items-center justify-center gap-3 py-4 mt-6 rounded-2xl bg-[#0D47A1] text-white font-bold text-lg hover:bg-[#1565C0] transition-all active:scale-[0.98] shadow-lg shadow-blue-200 disabled:opacity-70"
+            className="w-full flex items-center justify-center gap-3 py-4 mt-6 rounded-2xl bg-white text-[#295818] font-bold text-lg hover:bg-slate-100 transition-all active:scale-[0.98] shadow-lg disabled:opacity-70 cursor-pointer disabled:cursor-not-allowed"
           >
             {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Sign Up')}
           </button>
         </form>
 
-        <div className="mt-6 pt-6 border-t border-slate-100">
-          <p className="text-sm text-slate-600">
+        <div className="mt-6 pt-6 border-t border-white/10">
+          <p className="text-sm text-white/70">
             {isLogin ? "Don't have an account?" : "Already have an account?"}
             <button 
               type="button"
               onClick={() => setIsLogin(!isLogin)}
-              className="ml-2 font-semibold text-[#0D47A1] hover:underline"
+              className="ml-2 font-semibold text-white hover:underline cursor-pointer"
             >
               {isLogin ? 'Sign up' : 'Sign in'}
             </button>
@@ -5045,8 +5230,12 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
             <div key={user.uid} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-4">
               <div className="flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${user.isApproved ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
-                    {user.displayName?.charAt(0) || 'U'}
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold overflow-hidden ${user.isApproved ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
+                    {user.photoURL ? (
+                      <img src={user.photoURL} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      user.displayName?.charAt(0) || 'U'
+                    )}
                   </div>
                   <div className="min-w-0">
                     <p className="font-bold text-slate-800 truncate">{user.displayName}</p>
@@ -5062,7 +5251,7 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
                     <button
                       onClick={() => toggleApproval(user.uid, user.isApproved)}
                       disabled={user.email === 'bijoymahmudmunna@gmail.com'}
-                      className={`p-1.5 rounded-lg transition-colors ${user.isApproved ? 'text-rose-500 hover:bg-rose-50' : 'text-emerald-500 hover:bg-emerald-50'} disabled:opacity-30`}
+                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${user.isApproved ? 'text-rose-500 hover:bg-rose-50' : 'text-emerald-500 hover:bg-emerald-50'} disabled:opacity-30 disabled:cursor-not-allowed`}
                       title={user.isApproved ? "Revoke Access" : "Approve User"}
                     >
                       {user.isApproved ? <ShieldX className="w-5 h-5" /> : <ShieldCheck className="w-5 h-5" />}
@@ -5075,7 +5264,7 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
                     <select 
                       value={user.role}
                       onChange={(e) => updateRole(user.uid, e.target.value as UserRole)}
-                      className="text-xs font-bold py-1.5 px-3 rounded-lg border border-slate-200 bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
+                      className="text-xs font-bold py-1.5 px-3 rounded-lg border border-slate-200 bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer disabled:cursor-not-allowed"
                       disabled={user.email === 'bijoymahmudmunna@gmail.com'}
                     >
                       <option value="member">Member</option>
@@ -5085,7 +5274,7 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
 
                     <button 
                       onClick={() => setEditingPermissionsUid(prev => prev === user.uid ? null : user.uid)}
-                      className="text-xs font-bold py-1.5 px-3 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                      className="text-xs font-bold py-1.5 px-3 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer"
                       disabled={user.email === 'bijoymahmudmunna@gmail.com'}
                     >
                       {editingPermissionsUid === user.uid ? 'Hide Perms' : 'Edit Perms'}
@@ -5094,7 +5283,7 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
                     <button
                       onClick={() => setUserToDelete(user.uid)}
                       disabled={user.email === 'bijoymahmudmunna@gmail.com'}
-                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30"
+                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                       title="Delete User"
                     >
                       <Trash2 className="w-5 h-5" />
@@ -5115,7 +5304,7 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
                         <select 
                           value={(user.permissions && (user.permissions as any)[key]) || 'none'}
                           onChange={(e) => updatePermission(user.uid, user.permissions || {}, key, e.target.value as 'none' | 'view' | 'edit')}
-                          className="text-xs font-bold py-1.5 px-2 rounded-lg bg-slate-50 border border-slate-200"
+                          className="text-xs font-bold py-1.5 px-2 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer disabled:cursor-not-allowed"
                           disabled={user.email === 'bijoymahmudmunna@gmail.com'}
                         >
                           <option value="none">Hide</option>
@@ -5140,13 +5329,13 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
             <div className="flex gap-3 justify-end">
               <button 
                 onClick={() => setUserToDelete(null)}
-                className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button 
                 onClick={confirmDeleteUser}
-                className="px-4 py-2 font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors shadow-sm"
+                className="px-4 py-2 font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors shadow-sm cursor-pointer"
               >
                 Delete
               </button>

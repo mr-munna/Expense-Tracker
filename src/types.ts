@@ -89,12 +89,20 @@ export interface UserPermissions {
   revenue: AccessLevel;
   tomorrowWork: AccessLevel;
   billing: AccessLevel;
+  newBill: AccessLevel;
+  newQuotation: AccessLevel;
+  historyLogs: AccessLevel;
+  pdfSettings: AccessLevel;
+  exportBackup: AccessLevel;
+  backupProtection: AccessLevel;
+  projectList: AccessLevel;
 }
 
 export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
+  photoURL?: string;
   role: UserRole;
   isApproved: boolean;
   createdAt: string;
