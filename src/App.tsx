@@ -5164,16 +5164,16 @@ function LoginView() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 relative overflow-hidden">
       {/* Abstract Background Shapes */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#0D47A1]/10 rounded-full blur-3xl"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#0D47A1]/5 rounded-full blur-3xl"></div>
+      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#295818]/10 rounded-full blur-3xl"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#295818]/5 rounded-full blur-3xl"></div>
       
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md bg-[#0D47A1] rounded-3xl shadow-2xl p-8 text-center relative z-10"
+        className="w-full max-w-md bg-[#295818] rounded-3xl shadow-2xl p-8 text-center relative z-10"
       >
         <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-md border border-white/20">
-          <span className="text-4xl font-black text-[#0D47A1] tracking-tighter">AE</span>
+          <span className="text-4xl font-black text-[#295818] tracking-tighter">AE</span>
         </div>
         <h1 className="text-2xl font-black text-white mb-2 tracking-tight">ALTASMIM ENGINEERING</h1>
         <p className="text-white/70 font-medium mb-8">Management System {isLogin ? 'Login' : 'Signup'}</p>
@@ -5223,7 +5223,7 @@ function LoginView() {
           <button 
             type="submit"
             disabled={loading}
-            className="w-full flex items-center justify-center gap-3 py-4 mt-6 rounded-2xl bg-white text-[#0D47A1] font-bold text-lg hover:bg-slate-100 transition-all active:scale-[0.98] shadow-lg disabled:opacity-70 cursor-pointer disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-3 py-4 mt-6 rounded-2xl bg-white text-[#295818] font-bold text-lg hover:bg-slate-100 transition-all active:scale-[0.98] shadow-lg disabled:opacity-70 cursor-pointer disabled:cursor-not-allowed"
           >
             {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Sign Up')}
           </button>
