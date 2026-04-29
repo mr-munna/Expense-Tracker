@@ -6,6 +6,7 @@ export interface EmployeePayment {
   projectName: string;
   payment: number;
   transport: number;
+  createdByEmail?: string;
 }
 
 export interface ProjectExpense {
@@ -14,9 +15,11 @@ export interface ProjectExpense {
   projectName: string;
   timestamp: string;
   materialsCost: number;
+  materialsName?: string;
   transportCost: number;
   othersCost: number;
   budget: number;
+  createdByEmail?: string;
 }
 
 export interface TomorrowWorkRow {
@@ -26,6 +29,7 @@ export interface TomorrowWorkRow {
   workDescription: string;
   manpowerList: string[];
   overtime: string;
+  createdByEmail?: string;
 }
 
 export interface BillItem {
@@ -54,6 +58,7 @@ export interface Bill {
   termsAndConditions?: string;
   timestamp: string;
   revision?: number;
+  createdByEmail?: string;
 }
 
 export interface PDFSettings {
@@ -75,6 +80,7 @@ export interface CollectedBill {
   date: string;
   projectName: string;
   amount: number;
+  createdByEmail?: string;
 }
 
 export interface Meeting {
@@ -86,6 +92,7 @@ export interface Meeting {
   reminderEnabled: boolean;
   createdAt: string;
   notificationId?: number;
+  createdByEmail?: string;
 }
 
 export type UserRole = 'super_admin' | 'admin' | 'member';

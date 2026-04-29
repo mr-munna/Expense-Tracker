@@ -662,7 +662,7 @@ function AppContent() {
   const addPayment = async (payment: Omit<EmployeePayment, 'id'>) => {
     try {
       const id = crypto.randomUUID();
-      await setDoc(doc(db, 'payments', id), { ...payment, id, createdBy: user?.uid });
+      await setDoc(doc(db, 'payments', id), { ...payment, id, createdBy: user?.uid, createdByEmail: user?.email || undefined });
     } catch (error: any) {
       console.error("Error adding payment:", error);
       alert("Failed to save data. You may not have permission.");
@@ -673,7 +673,7 @@ function AppContent() {
   const addProjectExpense = async (expense: Omit<ProjectExpense, 'id'>) => {
     try {
       const id = crypto.randomUUID();
-      await setDoc(doc(db, 'expenses', id), { ...expense, id, createdBy: user?.uid });
+      await setDoc(doc(db, 'expenses', id), { ...expense, id, createdBy: user?.uid, createdByEmail: user?.email || undefined });
     } catch (error: any) {
       console.error("Error adding expense:", error);
       alert("Failed to save data. You may not have permission.");
@@ -684,7 +684,7 @@ function AppContent() {
   const addCollectedBill = async (bill: Omit<CollectedBill, 'id'>) => {
     try {
       const id = crypto.randomUUID();
-      await setDoc(doc(db, 'collectedBills', id), { ...bill, id, createdBy: user?.uid });
+      await setDoc(doc(db, 'collectedBills', id), { ...bill, id, createdBy: user?.uid, createdByEmail: user?.email || undefined });
     } catch (error: any) {
       console.error("Error adding collected bill:", error);
       alert("Failed to collect bill. You may not have permission.");
@@ -908,6 +908,7 @@ function AppContent() {
             onBack={() => setCurrentView('DASHBOARD')} 
             onViewHistory={() => setCurrentView('TOMORROW_WORK_HISTORY')}
             isAdmin={hasPermission('tomorrowWork', 'edit')}
+            isSuperAdmin={isSuperAdmin}
             onSave={async () => {
               const isDataEmpty = currentTomorrowWorkRows.every(row => 
                 !row.projectName.trim() && 
@@ -940,6 +941,7 @@ function AppContent() {
             rows={currentTomorrowWorkRows} 
             date={tomorrowWorkDate} 
             onBack={() => setCurrentView('TOMORROW_WORK')} 
+            isSuperAdmin={isSuperAdmin}
           />
         );
       case 'ADD_DATA':
@@ -977,7 +979,7 @@ function AppContent() {
                   await updateDoc(doc(db, 'bills', bill.id), bill as any);
                   setEditingBill(null);
                 } else {
-                  await setDoc(doc(db, 'bills', bill.id), { ...bill, createdBy: user?.uid }); 
+                  await setDoc(doc(db, 'bills', bill.id), { ...bill, createdBy: user?.uid, createdByEmail: user?.email || undefined }); 
                 }
                 setCurrentView('BILL_HISTORY'); 
               } catch (error) {
@@ -1001,7 +1003,7 @@ function AppContent() {
                   await updateDoc(doc(db, 'bills', bill.id), bill as any);
                   setEditingBill(null);
                 } else {
-                  await setDoc(doc(db, 'bills', bill.id), { ...bill, createdBy: user?.uid }); 
+                  await setDoc(doc(db, 'bills', bill.id), { ...bill, createdBy: user?.uid, createdByEmail: user?.email || undefined }); 
                 }
                 setCurrentView('BILL_HISTORY'); 
               } catch (error) {
@@ -1032,7 +1034,7 @@ function AppContent() {
         return isSuperAdmin ? <UserManagementView onBack={() => setCurrentView('DASHBOARD')} /> : <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
       case 'MEETINGS':
         if (!hasPermission('meetings', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
-        return <MeetingsView meetings={meetings} isAdmin={hasPermission('meetings', 'edit')} onBack={() => setCurrentView('DASHBOARD')} />;
+        return <MeetingsView meetings={meetings} isAdmin={hasPermission('meetings', 'edit')} isSuperAdmin={isSuperAdmin} onBack={() => setCurrentView('DASHBOARD')} />;
       default:
         return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
     }
@@ -1422,6 +1424,42 @@ function DashboardView({ stats, payments, projectExpenses, onDetails }: {
       .slice(-6); // Last 6 months
   }, [payments, projectExpenses]);
 
+  const recentEntries = useMemo(() => {
+    const parseTimestamp = (ts: string) => {
+      if (!ts) return 0;
+      const match = ts.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[, ]+(.*))?/);
+      if (match) {
+        const [, d, m, y, t] = match;
+        const time = t || '00:00:00';
+        return new Date(`${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}T${time}`).getTime();
+      }
+      return 0;
+    };
+
+    const combined = [
+      ...payments.map(p => ({
+        id: p.id,
+        timestamp: p.timestamp,
+        timeVal: parseTimestamp(p.timestamp),
+        name: p.employeeName,
+        project: p.projectName,
+        amount: p.payment + (p.transport || 0),
+        type: 'Emp Payment'
+      })),
+      ...projectExpenses.map(p => ({
+        id: p.id,
+        timestamp: p.timestamp,
+        timeVal: parseTimestamp(p.timestamp),
+        name: p.materialsName || '-',
+        project: p.projectName,
+        amount: p.materialsCost + p.transportCost + p.othersCost,
+        type: 'Proj Expense'
+      }))
+    ];
+
+    return combined.sort((a, b) => b.timeVal - a.timeVal).slice(0, 10);
+  }, [payments, projectExpenses]);
+
   return (
     <div className="space-y-6 pb-10">
       <h2 className="text-xl font-bold border-b-2 border-[#0D47A1] inline-block pb-1 text-[#FF9900]">Dashboard</h2>
@@ -1583,24 +1621,28 @@ function DashboardView({ stats, payments, projectExpenses, onDetails }: {
           <table className="w-full text-xs text-left">
             <thead className="bg-[#FFB300] text-white">
               <tr>
-                <th className="p-2 border-r border-white/20">Date</th>
-                <th className="p-2 border-r border-white/20">Name</th>
-                <th className="p-2 border-r border-white/20">Project</th>
-                <th className="p-2">Payment</th>
+                <th className="p-2 border-r border-white/20 w-[20%]">Date</th>
+                <th className="p-2 border-r border-white/20 w-[25%]">Name/Ref</th>
+                <th className="p-2 border-r border-white/20 w-[25%]">Project</th>
+                <th className="p-2 border-r border-white/20 w-[15%] text-center">Type</th>
+                <th className="p-2 w-[15%] text-right">Amount</th>
               </tr>
             </thead>
             <tbody>
-              {payments.slice(-5).reverse().map((p, i) => (
-                <tr key={p.id} className={i % 2 === 0 ? 'bg-white' : 'bg-[#F5F9FD]'}>
-                  <td className="p-2 border-r border-[#B0BEC5]/30">{p.timestamp}</td>
-                  <td className="p-2 border-r border-[#B0BEC5]/30">{p.employeeName}</td>
-                  <td className="p-2 border-r border-[#B0BEC5]/30">{p.projectName}</td>
-                  <td className="p-2 font-bold">{formatCurrency(p.payment + (p.transport || 0))}</td>
+              {recentEntries.map((entry, i) => (
+                <tr key={`${entry.id}-${i}`} className={i % 2 === 0 ? 'bg-white' : 'bg-[#F5F9FD]'}>
+                  <td className="p-2 border-r border-[#B0BEC5]/30 whitespace-nowrap">{entry.timestamp.split(',')[0]}</td>
+                  <td className="p-2 border-r border-[#B0BEC5]/30 truncate max-w-[100px]">{entry.name}</td>
+                  <td className="p-2 border-r border-[#B0BEC5]/30 truncate max-w-[100px]">{entry.project}</td>
+                  <td className="p-2 border-r border-[#B0BEC5]/30 text-center text-[10px] font-bold text-[#455A64]">
+                    {entry.type === 'Emp Payment' ? 'Employee' : 'Project'}
+                  </td>
+                  <td className="p-2 font-bold text-right text-[#2E7D32]">{formatCurrency(entry.amount)}</td>
                 </tr>
               ))}
-              {payments.length === 0 && (
+              {recentEntries.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="p-8 text-center text-[#78909C]">No data available</td>
+                  <td colSpan={5} className="p-8 text-center text-[#78909C]">No data available</td>
                 </tr>
               )}
             </tbody>
@@ -1632,6 +1674,7 @@ function AddDataView({ onAddPayment, onAddProject, onBack, payments, projectExpe
     uniqueId: 'ATP-' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0'),
     projectName: '',
     materialsCost: '',
+    materialsName: '',
     transportCost: '',
     othersCost: ''
   });
@@ -1671,6 +1714,7 @@ function AddDataView({ onAddPayment, onAddProject, onBack, payments, projectExpe
           ...projForm,
           timestamp: new Date().toLocaleString('en-GB'),
           materialsCost: parseFloat(projForm.materialsCost || '0'),
+          materialsName: projForm.materialsName || '',
           transportCost: parseFloat(projForm.transportCost || '0'),
           othersCost: parseFloat(projForm.othersCost || '0'),
           budget: 0
@@ -1736,6 +1780,7 @@ function AddDataView({ onAddPayment, onAddProject, onBack, payments, projectExpe
             suggestions={projectNames}
           />
           <InputField label="MATERIALS COST:" type="number" value={projForm.materialsCost} onChange={v => setProjForm({...projForm, materialsCost: v})} />
+          <InputField label="MATERIALS NAME:" type="text" value={projForm.materialsName} onChange={v => setProjForm({...projForm, materialsName: v})} />
           <InputField label="TRANSPORT:" type="number" value={projForm.transportCost} onChange={v => setProjForm({...projForm, transportCost: v})} />
           <InputField label="OTHERS COST:" type="number" value={projForm.othersCost} onChange={v => setProjForm({...projForm, othersCost: v})} />
         </div>
@@ -1815,7 +1860,8 @@ function PaymentHistoryView({
   onDeleteProject,
   onDeleteProjects,
   onUpdateProject,
-  isAdmin
+  isAdmin,
+  isSuperAdmin
 }: { 
   payments: EmployeePayment[], 
   projectExpenses: ProjectExpense[],
@@ -1827,7 +1873,8 @@ function PaymentHistoryView({
   onDeleteProject: (id: string) => void,
   onDeleteProjects: (ids: string[]) => void,
   onUpdateProject: (id: string, updated: Partial<ProjectExpense>) => void,
-  isAdmin: boolean
+  isAdmin: boolean,
+  isSuperAdmin?: boolean
 }) {
   const [activeTab, setActiveTab] = useState<'EMPLOYEE' | 'PROJECT'>('EMPLOYEE');
   const [startDate, setStartDate] = useState('');
@@ -1884,6 +1931,7 @@ function PaymentHistoryView({
       onUpdateProject(editingId!, {
         ...editForm,
         materialsCost: parseFloat(editForm.materialsCost),
+        materialsName: editForm.materialsName || '',
         transportCost: parseFloat(editForm.transportCost),
         othersCost: parseFloat(editForm.othersCost)
       });
@@ -2103,9 +2151,10 @@ function PaymentHistoryView({
               ) : (
                 <>
                   <InputField label="PROJECT NAME:" value={editForm.projectName} onChange={v => setEditForm({...editForm, projectName: v})} />
-                  <InputField label="MATERIALS COST:" type="number" value={editForm.materialsCost} onChange={v => setEditForm({...editForm, materialsCost: v})} />
-                  <InputField label="TRANSPORT:" type="number" value={editForm.transportCost} onChange={v => setEditForm({...editForm, transportCost: v})} />
-                  <InputField label="OTHERS:" type="number" value={editForm.othersCost} onChange={v => setEditForm({...editForm, othersCost: v})} />
+                  <InputField label="MATERIALS COST:" type="number" value={editForm.materialsCost || ''} onChange={v => setEditForm({...editForm, materialsCost: v})} />
+                  <InputField label="MATERIALS NAME:" type="text" value={editForm.materialsName || ''} onChange={v => setEditForm({...editForm, materialsName: v})} />
+                  <InputField label="TRANSPORT:" type="number" value={editForm.transportCost || ''} onChange={v => setEditForm({...editForm, transportCost: v})} />
+                  <InputField label="OTHERS:" type="number" value={editForm.othersCost || ''} onChange={v => setEditForm({...editForm, othersCost: v})} />
                 </>
               )}
             </div>
@@ -2165,7 +2214,10 @@ function PaymentHistoryView({
                         />
                       </td>
                     )}
-                    <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate">{p.timestamp.split(',')[0]}</td>
+                    <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate">
+                      {p.timestamp.split(',')[0]}
+                      {isSuperAdmin && p.createdByEmail && <div className="text-[8px] text-[#D32F2F] font-bold leading-tight mt-0.5">{p.createdByEmail.split('@')[0]}</div>}
+                    </td>
                     <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate">{p.employeeName}</td>
                     <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate">{p.projectName}</td>
                     <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 font-bold truncate">{p.payment.toLocaleString()}</td>
@@ -2205,11 +2257,12 @@ function PaymentHistoryView({
                       />
                     </th>
                   )}
-                  <th className="p-1 sm:p-2 border-r border-white/20 w-[20%]">Date</th>
-                  <th className="p-1 sm:p-2 border-r border-white/20 w-[23%]">Project</th>
-                  <th className="p-1 sm:p-2 border-r border-white/20 w-[13%]">Mat.</th>
-                  <th className="p-1 sm:p-2 border-r border-white/20 w-[13%]">Trn.</th>
-                  <th className="p-1 sm:p-2 border-r border-white/20 w-[13%]">Oth.</th>
+                  <th className="p-1 sm:p-2 border-r border-white/20 w-[15%]">Date</th>
+                  <th className="p-1 sm:p-2 border-r border-white/20 w-[16%]">Project</th>
+                  <th className="p-1 sm:p-2 border-r border-white/20 w-[15%]">Mat. Name</th>
+                  <th className="p-1 sm:p-2 border-r border-white/20 w-[12%]">Mat.</th>
+                  <th className="p-1 sm:p-2 border-r border-white/20 w-[12%]">Trn.</th>
+                  <th className="p-1 sm:p-2 border-r border-white/20 w-[12%]">Oth.</th>
                   {isAdmin && <th className="p-1 sm:p-2 text-center w-[10%]">Act</th>}
                 </tr>
               </thead>
@@ -2226,8 +2279,12 @@ function PaymentHistoryView({
                         />
                       </td>
                     )}
-                    <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate">{pe.timestamp.split(',')[0]}</td>
+                    <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate">
+                      {pe.timestamp.split(',')[0]}
+                      {isSuperAdmin && pe.createdByEmail && <div className="text-[8px] text-[#D32F2F] font-bold leading-tight mt-0.5">{pe.createdByEmail.split('@')[0]}</div>}
+                    </td>
                     <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate">{pe.projectName}</td>
+                    <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate" title={pe.materialsName}>{pe.materialsName || '-'}</td>
                     <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate">{pe.materialsCost.toLocaleString()}</td>
                     <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate">{pe.transportCost.toLocaleString()}</td>
                     <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 font-bold truncate">{pe.othersCost.toLocaleString()}</td>
@@ -2840,7 +2897,14 @@ function RevenueView({
                   {collectedBills.map((bill, i) => (
                     <tr key={bill.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-[#F5F9FD]'}>
                       <td className="p-2 border-r border-[#B0BEC5]/30 text-center">{(i + 1).toString().padStart(2, '0')}</td>
-                      <td className="p-2 border-r border-[#B0BEC5]/30 whitespace-nowrap">{bill.date}</td>
+                      <td className="p-2 border-r border-[#B0BEC5]/30 whitespace-nowrap">
+                        {bill.date}
+                        {isSuperAdmin && bill.createdByEmail && (
+                          <div className="text-[10px] text-[#D32F2F] mt-0.5 font-bold">
+                            {bill.createdByEmail.split('@')[0]}
+                          </div>
+                        )}
+                      </td>
                       <td className="p-2 border-r border-[#B0BEC5]/30 font-medium">{bill.projectName}</td>
                       <td className={`p-2 font-bold text-[#2E7D32] ${isSuperAdmin ? 'border-r border-[#B0BEC5]/30' : ''}`}>
                         {formatCurrency(bill.amount)}
@@ -3633,7 +3697,8 @@ function TomorrowWorkView({
   onBack,
   onViewHistory,
   onSave,
-  isAdmin
+  isAdmin,
+  isSuperAdmin
 }: { 
   rows: TomorrowWorkRow[], 
   setRows: React.Dispatch<React.SetStateAction<TomorrowWorkRow[]>>, 
@@ -3650,7 +3715,8 @@ function TomorrowWorkView({
   onBack: () => void,
   onViewHistory: () => void,
   onSave: () => void,
-  isAdmin: boolean
+  isAdmin: boolean,
+  isSuperAdmin?: boolean
 }) {
   const [activeRowId, setActiveRowId] = useState<string | null>(null);
   const [activeField, setActiveField] = useState<'projectName' | 'projectAddress' | 'workDescription' | 'manpower' | null>(null);
@@ -3668,7 +3734,8 @@ function TomorrowWorkView({
       projectAddress: '',
       workDescription: '',
       manpowerList: [],
-      overtime: ''
+      overtime: '',
+      createdByEmail: auth.currentUser?.email || undefined
     }]);
   };
 
@@ -4073,11 +4140,13 @@ function TomorrowWorkHistoryView({
 function TomorrowWorkDetailsView({ 
   rows, 
   date, 
-  onBack 
+  onBack,
+  isSuperAdmin
 }: { 
   rows: TomorrowWorkRow[], 
   date: string, 
-  onBack: () => void 
+  onBack: () => void,
+  isSuperAdmin?: boolean
 }) {
   return (
     <div className="fixed inset-0 bg-white z-50 flex flex-col overflow-hidden">
@@ -4109,6 +4178,11 @@ function TomorrowWorkDetailsView({
                   </td>
                   <td className="p-2 border-r border-[#B0BEC5]/20 text-[11px] font-medium text-[#1A237E] break-words">
                     {row.projectName || 'N/A'}
+                    {isSuperAdmin && row.createdByEmail && (
+                      <div className="text-[9px] text-[#D32F2F] mt-1 font-bold">
+                        {row.createdByEmail.split('@')[0]}
+                      </div>
+                    )}
                   </td>
                   <td className="p-2 border-r border-[#B0BEC5]/20 text-[11px] font-medium text-[#455A64] break-words">
                     {row.projectAddress || 'N/A'}
@@ -5061,7 +5135,7 @@ function BillView({ type, nextNumber, onSave, onBack, initialBill, pdfSettings }
   );
 }
 
-function BillHistoryView({ bills, onEdit, onBack, pdfSettings, isAdmin }: { bills: Bill[], onEdit: (bill: Bill) => void, onBack: () => void, pdfSettings: PDFSettings, isAdmin: boolean }) {
+function BillHistoryView({ bills, onEdit, onBack, pdfSettings, isAdmin, isSuperAdmin }: { bills: Bill[], onEdit: (bill: Bill) => void, onBack: () => void, pdfSettings: PDFSettings, isAdmin: boolean, isSuperAdmin?: boolean }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'BILL' | 'QUOTATION'>('BILL');
 
@@ -5133,11 +5207,16 @@ function BillHistoryView({ bills, onEdit, onBack, pdfSettings, isAdmin }: { bill
           >
             <div className="flex justify-between items-start">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${bill.type === 'BILL' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
                     {bill.type}
                   </span>
                   <span className="text-xs text-[#78909C]">{new Date(bill.date).toLocaleDateString('en-GB')}</span>
+                  {isSuperAdmin && bill.createdByEmail && (
+                    <span className="text-[10px] font-bold text-[#D32F2F] bg-red-50 px-1 rounded">
+                      {bill.createdByEmail.split('@')[0]}
+                    </span>
+                  )}
                 </div>
                 <h3 className="font-bold text-[#1A237E] mt-1">{bill.recipientName}</h3>
                 <p className="text-xs text-[#78909C]">{bill.site}</p>
@@ -5584,7 +5663,7 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
   );
 }
 
-export function MeetingsView({ meetings, isAdmin, onBack }: { meetings: Meeting[], isAdmin: boolean, onBack: () => void }) {
+export function MeetingsView({ meetings, isAdmin, isSuperAdmin, onBack }: { meetings: Meeting[], isAdmin: boolean, isSuperAdmin?: boolean, onBack: () => void }) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [clientName, setClientName] = useState('');
   const [meetingDate, setMeetingDate] = useState('');
@@ -5654,6 +5733,7 @@ export function MeetingsView({ meetings, isAdmin, onBack }: { meetings: Meeting[
         reminderEnabled,
         createdAt: new Date().toISOString(),
         notificationId: reminderEnabled ? notificationId : undefined,
+        createdByEmail: auth.currentUser?.email || undefined,
       };
 
       const docRef = await addDoc(collection(db, 'meetings'), newMeeting);
@@ -5844,6 +5924,11 @@ export function MeetingsView({ meetings, isAdmin, onBack }: { meetings: Meeting[
                     <p className="text-sm border-l-2 border-slate-200 pl-3 py-1 text-slate-600 mt-2 bg-slate-50 rounded-r-lg">
                       {meeting.agenda}
                     </p>
+                    {isSuperAdmin && meeting.createdByEmail && (
+                      <p className="text-[10px] font-bold text-[#D32F2F] mt-2">
+                        Created by: {meeting.createdByEmail.split('@')[0]}
+                      </p>
+                    )}
                   </div>
                 </div>
                 
