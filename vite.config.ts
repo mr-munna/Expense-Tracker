@@ -22,19 +22,19 @@ export default defineConfig(({mode}) => {
           orientation: 'portrait',
           icons: [
             {
-              src: "https://placehold.jp/0d47a1/ffffff/192x192.png?text=AE",
+              src: "https://placehold.jp/dc2626/ffffff/192x192.png?text=AE",
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: "https://placehold.jp/0d47a1/ffffff/512x512.png?text=AE",
+              src: "https://placehold.jp/dc2626/ffffff/512x512.png?text=AE",
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: "https://placehold.jp/0d47a1/ffffff/512x512.png?text=AE",
+              src: "https://placehold.jp/dc2626/ffffff/512x512.png?text=AE",
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable'

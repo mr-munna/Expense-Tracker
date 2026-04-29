@@ -44,7 +44,11 @@ import {
   ShieldCheck,
   ShieldAlert,
   Shield,
-  Briefcase
+  CalendarClock,
+  Briefcase,
+  Bell,
+  BellRing,
+  Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -64,7 +68,8 @@ import {
   YAxis, 
   CartesianGrid 
 } from 'recharts';
-import { EmployeePayment, ProjectExpense, View, TomorrowWorkRow, Bill, BillItem, PDFSettings, UserRole, UserProfile, CollectedBill, ProjectListEntry } from './types';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { EmployeePayment, ProjectExpense, View, TomorrowWorkRow, Bill, BillItem, PDFSettings, UserRole, UserProfile, CollectedBill, ProjectListEntry, Meeting } from './types';
 import { 
   auth, 
   db, 
@@ -110,7 +115,7 @@ const DEFAULT_PDF_SETTINGS: PDFSettings = {
 };
 
 // --- Auth Context ---
-export type PermissionModule = 'dashboard' | 'addData' | 'payments' | 'projects' | 'revenue' | 'tomorrowWork' | 'billing' | 'newBill' | 'newQuotation' | 'historyLogs' | 'pdfSettings' | 'exportBackup' | 'backupProtection' | 'projectList';
+export type PermissionModule = 'dashboard' | 'addData' | 'payments' | 'projects' | 'revenue' | 'tomorrowWork' | 'billing' | 'newBill' | 'newQuotation' | 'historyLogs' | 'pdfSettings' | 'exportBackup' | 'backupProtection' | 'projectList' | 'meetings';
 
 interface AuthContextType {
   user: FirebaseUser | null;
@@ -160,7 +165,8 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
                 pdfSettings: defaultLevel,
                 exportBackup: defaultLevel,
                 backupProtection: defaultLevel,
-                projectList: defaultLevel
+                projectList: defaultLevel,
+                meetings: defaultLevel
              };
              if (isSuperAdminEmail) {
                 currentProfile.isApproved = true;
@@ -179,7 +185,8 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
                   pdfSettings: 'edit',
                   exportBackup: 'edit',
                   backupProtection: 'edit',
-                  projectList: 'edit'
+                  projectList: 'edit',
+                  meetings: 'edit'
                 };
              }
              await updateDoc(userDocRef, { 
@@ -190,7 +197,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           
           // Ensure all keys exist in permissions if they added new ones
-          const expectedKeys = ['dashboard', 'addData', 'payments', 'projects', 'revenue', 'tomorrowWork', 'billing', 'newBill', 'newQuotation', 'historyLogs', 'pdfSettings', 'exportBackup', 'backupProtection', 'projectList'];
+          const expectedKeys = ['dashboard', 'addData', 'payments', 'projects', 'revenue', 'tomorrowWork', 'billing', 'newBill', 'newQuotation', 'historyLogs', 'pdfSettings', 'exportBackup', 'backupProtection', 'projectList', 'meetings'];
           let needsUpdate = false;
           if (currentProfile.permissions) {
             expectedKeys.forEach(key => {
@@ -236,7 +243,8 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
             pdfSettings: 'edit',
             exportBackup: 'edit',
             backupProtection: 'edit',
-            projectList: 'edit'
+            projectList: 'edit',
+            meetings: 'edit'
           }
        };
        await setDoc(userDocRef, superAdminProfile);
@@ -379,10 +387,15 @@ function AppContent() {
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
   const [pdfSettings, setPdfSettings] = useState<PDFSettings>(DEFAULT_PDF_SETTINGS);
   const [projectList, setProjectList] = useState<ProjectListEntry[]>([]);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
 
   // --- Firestore Listeners ---
   useEffect(() => {
     if (!isMember) return;
+
+    const unsubMeetings = onSnapshot(collection(db, 'meetings'), (snap) => {
+      setMeetings(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Meeting)));
+    });
 
     const unsubPayments = onSnapshot(collection(db, 'payments'), (snap) => {
       setPayments(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as EmployeePayment)));
@@ -431,6 +444,7 @@ function AppContent() {
       unsubSettings();
       unsubTomorrow();
       unsubProjectList();
+      unsubMeetings();
     };
   }, [isMember]);
 
@@ -947,6 +961,9 @@ function AppContent() {
         return <PDFSettingsView settings={pdfSettings} onSave={updatePdfSettings} onBack={() => setCurrentView('DASHBOARD')} />;
       case 'USERS':
         return isSuperAdmin ? <UserManagementView onBack={() => setCurrentView('DASHBOARD')} /> : <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
+      case 'MEETINGS':
+        if (!hasPermission('meetings', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
+        return <MeetingsView meetings={meetings} isAdmin={hasPermission('meetings', 'edit')} onBack={() => setCurrentView('DASHBOARD')} />;
       default:
         return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
     }
@@ -979,7 +996,7 @@ function AppContent() {
                 
                 <div className="flex items-center gap-3 relative z-10">
                   <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0 shadow-lg">
-                    <span className="text-xl font-black text-[#0D47A1]">AE</span>
+                    <span className="text-xl font-black text-[#DC2626]">AE</span>
                   </div>
                   <div className="flex flex-col">
                     <h2 className="font-bold text-lg leading-tight tracking-tight">Altasmim Engineering</h2>
@@ -999,6 +1016,7 @@ function AppContent() {
                 <p className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-[0.15em] px-3 mb-3">Navigation</p>
                 {[
                   ...(hasPermission('projectList', 'view') ? [{ view: 'PROJECT_LIST', label: 'Projects', value: 'Project List', icon: <Briefcase className="w-5 h-5" />, bg: 'bg-teal-50', color: 'text-teal-600' }] : []),
+                  ...(hasPermission('meetings', 'view') ? [{ view: 'MEETINGS', label: 'Schedules', value: 'Client Meetings', icon: <CalendarClock className="w-5 h-5" />, bg: 'bg-fuchsia-50', color: 'text-fuchsia-600' }] : []),
                   ...(hasPermission('newBill', 'view') ? [{ view: 'BILL', label: 'Create', value: 'New Bill', icon: <Receipt className="w-5 h-5" />, bg: 'bg-indigo-50', color: 'text-indigo-600' }] : []),
                   ...(hasPermission('newQuotation', 'view') ? [{ view: 'QUOTATION', label: 'Create', value: 'New Quotation', icon: <FileText className="w-5 h-5" />, bg: 'bg-purple-50', color: 'text-purple-600' }] : []),
                   ...(hasPermission('historyLogs', 'view') ? [{ view: 'BILL_HISTORY', label: 'Records', value: 'History & Logs', icon: <History className="w-5 h-5" />, bg: 'bg-amber-50', color: 'text-amber-600' }] : []),
@@ -5173,7 +5191,7 @@ function LoginView() {
         className="w-full max-w-md bg-[#295818] rounded-3xl shadow-2xl p-8 text-center relative z-10"
       >
         <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-md border border-white/20">
-          <span className="text-4xl font-black text-[#295818] tracking-tighter">AE</span>
+          <span className="text-4xl font-black text-[#DC2626] tracking-tighter">AE</span>
         </div>
         <h1 className="text-2xl font-black text-white mb-2 tracking-tight">ALTASMIM ENGINEERING</h1>
         <p className="text-white/70 font-medium mb-8">Management System {isLogin ? 'Login' : 'Signup'}</p>
@@ -5455,6 +5473,289 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+export function MeetingsView({ meetings, isAdmin, onBack }: { meetings: Meeting[], isAdmin: boolean, onBack: () => void }) {
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [clientName, setClientName] = useState('');
+  const [meetingDate, setMeetingDate] = useState('');
+  const [meetingTime, setMeetingTime] = useState('');
+  const [agenda, setAgenda] = useState('');
+  const [reminderEnabled, setReminderEnabled] = useState(true);
+
+  const requestPermissions = async () => {
+    try {
+      const result = await LocalNotifications.requestPermissions();
+      return result.display === 'granted';
+    } catch (error) {
+      console.log('Push notifications not available in web context or error:', error);
+      return false; // Typically not available in web without service workers, or may throw.
+    }
+  };
+
+  const scheduleLocalNotification = async (meeting: Meeting) => {
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) return;
+
+    try {
+      const scheduleDate = new Date(`${meeting.meetingDate}T${meeting.meetingTime}`);
+      if (scheduleDate.getTime() <= Date.now()) return; // Don't schedule past dates
+
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            title: "Meeting Reminder",
+            body: `Meeting with ${meeting.clientName}. Agenda: ${meeting.agenda}`,
+            id: meeting.notificationId || Math.floor(Math.random() * 100000000),
+            schedule: { at: scheduleDate },
+            sound: undefined,
+            attachments: undefined,
+            actionTypeId: "",
+            extra: null
+          }
+        ]
+      });
+    } catch (error) {
+      console.error('Error scheduling notification:', error);
+    }
+  };
+
+  const cancelLocalNotification = async (notificationId: number) => {
+    try {
+      await LocalNotifications.cancel({ notifications: [{ id: notificationId }] });
+    } catch (error) {
+      console.log('Error canceling notification:', error);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clientName || !meetingDate || !meetingTime || !agenda) {
+      alert("Please fill out all fields.");
+      return;
+    }
+
+    try {
+      const notificationId = Math.floor(Math.random() * 100000000);
+      const newMeeting: Omit<Meeting, 'id'> = {
+        clientName,
+        meetingDate,
+        meetingTime,
+        agenda,
+        reminderEnabled,
+        createdAt: new Date().toISOString(),
+        notificationId: reminderEnabled ? notificationId : undefined,
+      };
+
+      const docRef = await addDoc(collection(db, 'meetings'), newMeeting);
+      
+      if (reminderEnabled) {
+        await scheduleLocalNotification({ ...newMeeting, id: docRef.id } as Meeting);
+      }
+
+      setClientName('');
+      setMeetingDate('');
+      setMeetingTime('');
+      setAgenda('');
+      setReminderEnabled(true);
+      setShowAddForm(false);
+      alert('Meeting scheduled successfully.');
+    } catch (error) {
+      console.error('Error adding meeting:', error);
+      alert('Failed to add meeting.');
+    }
+  };
+
+  const handleDelete = async (meeting: Meeting) => {
+    if (!window.confirm("Are you sure you want to delete this meeting?")) return;
+    
+    try {
+      if (meeting.notificationId) {
+        await cancelLocalNotification(meeting.notificationId);
+      }
+      await deleteDoc(doc(db, 'meetings', meeting.id));
+    } catch (error) {
+      console.error('Error deleting meeting:', error);
+    }
+  };
+
+  const sortedMeetings = [...meetings].sort((a, b) => {
+    const dateA = new Date(`${a.meetingDate}T${a.meetingTime}`).getTime();
+    const dateB = new Date(`${b.meetingDate}T${b.meetingTime}`).getTime();
+    return dateA - dateB;
+  });
+
+  return (
+    <div className="space-y-6 pb-20">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 mb-4">
+          <button onClick={onBack} className="p-1"><ArrowLeft className="w-5 h-5 cursor-pointer" /></button>
+          <h2 className="text-xl font-bold border-b-2 border-[#0D47A1] inline-block pb-1 text-[#0D47A1]">Client Meetings</h2>
+        </div>
+        
+        {isAdmin && !showAddForm && (
+          <button 
+            onClick={() => setShowAddForm(true)}
+            className="flex items-center gap-2 bg-[#0D47A1] text-white px-4 py-2 rounded-xl font-bold hover:bg-[#1565C0] transition-colors cursor-pointer shadow-md"
+          >
+            <Plus className="w-5 h-5" />
+            New Meeting
+          </button>
+        )}
+      </div>
+
+      <AnimatePresence>
+        {showAddForm && (
+          <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden mb-6"
+          >
+            <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-lg text-slate-800">Schedule New Meeting</h3>
+                <button type="button" onClick={() => setShowAddForm(false)} className="p-1 hover:bg-slate-100 rounded-lg cursor-pointer">
+                  <X className="w-5 h-5 text-slate-500" />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Client Name</label>
+                  <input
+                    type="text"
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl focus:border-[#0D47A1] focus:ring-1 focus:ring-[#0D47A1]"
+                    placeholder="Enter client name"
+                    required
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Date</label>
+                    <input
+                      type="date"
+                      value={meetingDate}
+                      onChange={(e) => setMeetingDate(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl focus:border-[#0D47A1] focus:ring-1 focus:ring-[#0D47A1]"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Time</label>
+                    <input
+                      type="time"
+                      value={meetingTime}
+                      onChange={(e) => setMeetingTime(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl focus:border-[#0D47A1] focus:ring-1 focus:ring-[#0D47A1]"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Agenda / Notes</label>
+                  <textarea
+                    value={agenda}
+                    onChange={(e) => setAgenda(e.target.value)}
+                    rows={3}
+                    className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl focus:border-[#0D47A1] focus:ring-1 focus:ring-[#0D47A1]"
+                    placeholder="Meeting agenda..."
+                    required
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <div className={`p-2 rounded-lg ${reminderEnabled ? 'bg-fuchsia-100 text-fuchsia-600' : 'bg-slate-200 text-slate-400'}`}>
+                    {reminderEnabled ? <BellRing className="w-5 h-5" /> : <Bell className="w-5 h-5" />}
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-bold text-sm text-slate-800">Device Reminder</p>
+                    <p className="text-xs text-slate-500">Notify me before the meeting starts</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked={reminderEnabled} onChange={e => setReminderEnabled(e.target.checked)} className="sr-only peer" />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-fuchsia-600"></div>
+                  </label>
+                </div>
+
+                <button 
+                  type="submit"
+                  className="w-full py-3 bg-[#0D47A1] text-white font-bold rounded-xl shadow-md hover:bg-[#1565C0] transition-colors cursor-pointer mt-4"
+                >
+                  Save Meeting
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="space-y-4">
+        {sortedMeetings.length === 0 ? (
+          <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center shadow-sm">
+            <CalendarClock className="w-16 h-16 text-slate-200 mx-auto mb-4" />
+            <h3 className="text-lg font-bold text-slate-700 mb-1">No Upcoming Meetings</h3>
+            <p className="text-slate-500 text-sm">You haven't scheduled any client meetings yet.</p>
+          </div>
+        ) : (
+          sortedMeetings.map(meeting => {
+            const meetingDateTime = new Date(`${meeting.meetingDate}T${meeting.meetingTime}`);
+            const isPast = meetingDateTime.getTime() < Date.now();
+            
+            return (
+              <div key={meeting.id} className={`bg-white rounded-2xl p-5 border shadow-sm transition-all flex flex-col sm:flex-row gap-4 ${isPast ? 'border-slate-200 opacity-60' : 'border-fuchsia-100 hover:shadow-md'}`}>
+                <div className="flex-1 flex gap-4">
+                  <div className={`w-14 h-14 rounded-xl flex flex-col items-center justify-center shrink-0 ${isPast ? 'bg-slate-100 text-slate-500' : 'bg-fuchsia-50 text-fuchsia-700'}`}>
+                    <span className="text-xs font-bold uppercase">{meetingDateTime.toLocaleString('default', { month: 'short' })}</span>
+                    <span className="text-xl font-black leading-tight">{meetingDateTime.getDate()}</span>
+                  </div>
+                  <div>
+                    <h3 className={`font-bold text-lg ${isPast ? 'text-slate-600' : 'text-slate-800'}`}>{meeting.clientName}</h3>
+                    <div className="flex flex-wrap items-center gap-3 mt-1 mb-2">
+                      <span className="flex items-center gap-1 auto text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md">
+                        <Clock className="w-3.5 h-3.5" />
+                        {meetingDateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      {meeting.reminderEnabled && !isPast && (
+                        <span className="flex items-center gap-1 text-xs font-semibold text-fuchsia-600 bg-fuchsia-50 px-2.5 py-1 rounded-md">
+                          <BellRing className="w-3.5 h-3.5" />
+                          Reminder Set
+                        </span>
+                      )}
+                      {isPast && (
+                        <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-md">
+                          Completed
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm border-l-2 border-slate-200 pl-3 py-1 text-slate-600 mt-2 bg-slate-50 rounded-r-lg">
+                      {meeting.agenda}
+                    </p>
+                  </div>
+                </div>
+                
+                {isAdmin && (
+                  <div className="flex items-start sm:items-center justify-end sm:border-l border-slate-100 sm:pl-4">
+                    <button 
+                      onClick={() => handleDelete(meeting)}
+                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                      title="Delete Meeting"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }

@@ -77,6 +77,17 @@ export interface CollectedBill {
   amount: number;
 }
 
+export interface Meeting {
+  id: string;
+  clientName: string;
+  meetingDate: string; // ISO format "2026-04-29"
+  meetingTime: string; // Time "14:30"
+  agenda: string;
+  reminderEnabled: boolean;
+  createdAt: string;
+  notificationId?: number;
+}
+
 export type UserRole = 'super_admin' | 'admin' | 'member';
 
 export type AccessLevel = 'none' | 'view' | 'edit';
@@ -96,6 +107,7 @@ export interface UserPermissions {
   exportBackup: AccessLevel;
   backupProtection: AccessLevel;
   projectList: AccessLevel;
+  meetings: AccessLevel;
 }
 
 export interface UserProfile {
@@ -117,4 +129,4 @@ export interface ProjectListEntry {
   completeDate: string;
 }
 
-export type View = 'DASHBOARD' | 'PAYMENT_HISTORY' | 'PROJECT_SUMMARY' | 'REVENUE' | 'ADD_DATA' | 'EMPLOYEE_TOTALS' | 'EXPORT' | 'ABOUT' | 'CLOUD_SYNC' | 'CONTACT_INFO' | 'TOMORROW_WORK' | 'TOMORROW_WORK_HISTORY' | 'TOMORROW_WORK_DETAILS' | 'BILL' | 'QUOTATION' | 'BILL_HISTORY' | 'PDF_SETTINGS' | 'USERS' | 'PROJECT_LIST';
+export type View = 'DASHBOARD' | 'PAYMENT_HISTORY' | 'PROJECT_SUMMARY' | 'REVENUE' | 'ADD_DATA' | 'EMPLOYEE_TOTALS' | 'EXPORT' | 'ABOUT' | 'CLOUD_SYNC' | 'CONTACT_INFO' | 'TOMORROW_WORK' | 'TOMORROW_WORK_HISTORY' | 'TOMORROW_WORK_DETAILS' | 'BILL' | 'QUOTATION' | 'BILL_HISTORY' | 'PDF_SETTINGS' | 'USERS' | 'PROJECT_LIST' | 'MEETINGS';

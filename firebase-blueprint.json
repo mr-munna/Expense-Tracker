@@ -100,6 +100,22 @@
       },
       "required": ["id", "date", "projectName", "amount"]
     },
+    "Meeting": {
+      "title": "Meeting",
+      "description": "Scheduled client meeting",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientName": { "type": "string" },
+        "meetingDate": { "type": "string", "format": "date" },
+        "meetingTime": { "type": "string", "format": "time" },
+        "agenda": { "type": "string" },
+        "reminderEnabled": { "type": "boolean" },
+        "notificationId": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clientName", "meetingDate", "meetingTime", "agenda"]
+    },
     "Settings": {
       "title": "Settings",
       "description": "Global application settings",
@@ -134,6 +150,10 @@
     "/project_list/{id}": {
       "schema": "ProjectListEntry",
       "description": "Master list of projects"
+    },
+    "/meetings/{id}": {
+      "schema": "Meeting",
+      "description": "Client meetings"
     },
     "/settings/{id}": {
       "schema": "Settings",
