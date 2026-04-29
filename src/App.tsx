@@ -977,14 +977,17 @@ function AppContent() {
                 <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl" />
                 <div className="absolute bottom-0 left-0 w-24 h-24 bg-blue-400/20 rounded-full -ml-12 -mb-12 blur-xl" />
                 
-                <div className="flex justify-between items-start relative z-10">
-                  <div className="flex flex-col gap-1">
-                    <h2 className="font-bold text-xl tracking-tight">Altasmim Engineering</h2>
-                    <p className="text-blue-100 text-[10px] font-medium uppercase tracking-[0.2em]">Project Tracker</p>
+                <div className="flex items-center gap-3 relative z-10">
+                  <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0 shadow-lg">
+                    <span className="text-xl font-black text-[#0D47A1]">AE</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <h2 className="font-bold text-lg leading-tight tracking-tight">Altasmim Engineering</h2>
+                    <p className="text-blue-100 text-[10px] font-medium uppercase tracking-[0.2em] opacity-80">Management System</p>
                   </div>
                   <button 
                     onClick={() => setIsSidebarOpen(false)}
-                    className="p-2 hover:bg-white/20 rounded-xl transition-all cursor-pointer active:scale-90"
+                    className="ml-auto p-2 hover:bg-white/20 rounded-xl transition-all cursor-pointer active:scale-90"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -1078,7 +1081,7 @@ function AppContent() {
             <Menu className="w-6 h-6 text-[#1A237E]" />
           </button>
           <h1 className="text-lg font-bold">
-            {currentView === 'TOMORROW_WORK' ? 'Tomorrow Work' : 'Altasmim Engineering'}
+            {currentView === 'TOMORROW_WORK' ? 'WORK SCHEDULE' : 'Altasmim Engineering'}
           </h1>
         </div>
       </header>
@@ -1144,7 +1147,7 @@ function AppContent() {
             active={currentView === 'TOMORROW_WORK'} 
             onClick={() => setCurrentView('TOMORROW_WORK')}
             icon={<Calendar className="w-5 h-5" />}
-            label="TOMORROW WORK"
+            label="WORK SCHEDULE"
             color="#ED7D31"
           />
         )}
@@ -3609,7 +3612,7 @@ function TomorrowWorkView({
     <div className="space-y-2 pb-64">
       <div className="flex items-center justify-between gap-3 mb-1">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-bold border-b-2 border-[#ED7D31] inline-block pb-1 text-[#ED7D31]">Tomorrow Work</h2>
+          <h2 className="text-lg font-bold border-b-2 border-[#ED7D31] inline-block pb-1 text-[#ED7D31]">WORK SCHEDULE</h2>
         </div>
         <div className="flex gap-2">
           <button 
@@ -5161,16 +5164,16 @@ function LoginView() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 relative overflow-hidden">
       {/* Abstract Background Shapes */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#295818]/10 rounded-full blur-3xl"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#295818]/5 rounded-full blur-3xl"></div>
+      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#0D47A1]/10 rounded-full blur-3xl"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#0D47A1]/5 rounded-full blur-3xl"></div>
       
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md bg-[#295818] rounded-3xl shadow-2xl p-8 text-center relative z-10"
+        className="w-full max-w-md bg-[#0D47A1] rounded-3xl shadow-2xl p-8 text-center relative z-10"
       >
         <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-md border border-white/20">
-          <span className="text-4xl font-black text-[#295818] tracking-tighter">AE</span>
+          <span className="text-4xl font-black text-[#0D47A1] tracking-tighter">AE</span>
         </div>
         <h1 className="text-2xl font-black text-white mb-2 tracking-tight">ALTASMIM ENGINEERING</h1>
         <p className="text-white/70 font-medium mb-8">Management System {isLogin ? 'Login' : 'Signup'}</p>
@@ -5220,7 +5223,7 @@ function LoginView() {
           <button 
             type="submit"
             disabled={loading}
-            className="w-full flex items-center justify-center gap-3 py-4 mt-6 rounded-2xl bg-white text-[#295818] font-bold text-lg hover:bg-slate-100 transition-all active:scale-[0.98] shadow-lg disabled:opacity-70 cursor-pointer disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-3 py-4 mt-6 rounded-2xl bg-white text-[#0D47A1] font-bold text-lg hover:bg-slate-100 transition-all active:scale-[0.98] shadow-lg disabled:opacity-70 cursor-pointer disabled:cursor-not-allowed"
           >
             {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Sign Up')}
           </button>
@@ -5309,7 +5312,7 @@ function UserManagementView({ onBack }: { onBack: () => void }) {
     { key: 'payments', label: 'Payments' },
     { key: 'projects', label: 'Projects' },
     { key: 'revenue', label: 'Revenue' },
-    { key: 'tomorrowWork', label: 'Tomorrow Work' },
+    { key: 'tomorrowWork', label: 'WORK SCHEDULE' },
     { key: 'billing', label: 'Billing' },
     { key: 'newBill', label: 'New Bill' },
     { key: 'newQuotation', label: 'New Quotation' },
