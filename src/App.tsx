@@ -298,13 +298,62 @@ function useAuth() {
 }
 
 // --- Main App Wrapper ---
-export default function App() {
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+function App() {
   return (
     <AuthProvider>
       <AppContent />
     </AuthProvider>
   );
 }
+
+export default App;
 
 function AppContent() {
   const { user, profile, loading, isAdmin, isSuperAdmin, isMember, logout, hasPermission } = useAuth();
@@ -336,15 +385,15 @@ function AppContent() {
     if (!isMember) return;
 
     const unsubPayments = onSnapshot(collection(db, 'payments'), (snap) => {
-      setPayments(snap.docs.map(doc => doc.data() as EmployeePayment));
+      setPayments(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as EmployeePayment)));
     });
 
     const unsubExpenses = onSnapshot(collection(db, 'expenses'), (snap) => {
-      setProjectExpenses(snap.docs.map(doc => doc.data() as ProjectExpense));
+      setProjectExpenses(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as ProjectExpense)));
     });
 
     const unsubBills = onSnapshot(collection(db, 'bills'), (snap) => {
-      const billsList = snap.docs.map(doc => doc.data() as Bill);
+      const billsList = snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Bill));
       setBills(billsList);
       
       // Update next numbers
@@ -355,7 +404,7 @@ function AppContent() {
     });
 
     const unsubCollectedBills = onSnapshot(collection(db, 'collectedBills'), (snap) => {
-      setCollectedBills(snap.docs.map(doc => doc.data() as CollectedBill));
+      setCollectedBills(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as CollectedBill)));
     });
 
     const unsubSettings = onSnapshot(doc(db, 'settings', 'pdf'), (snap) => {
@@ -371,7 +420,7 @@ function AppContent() {
     });
 
     const unsubProjectList = onSnapshot(collection(db, 'project_list'), (snap) => {
-      setProjectList(snap.docs.map(doc => doc.data() as ProjectListEntry));
+      setProjectList(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as ProjectListEntry)));
     });
 
     return () => {
@@ -560,11 +609,47 @@ function AppContent() {
     }
   };
 
+  const deleteProjectData = async (projectName: string) => {
+    if (!window.confirm(`Are you sure you want to delete ALL data (expenses, payments, bills) for project: "${projectName}"? This cannot be undone.`)) return;
+
+    try {
+      const normalizedName = projectName.trim().toLowerCase();
+      
+      // Delete from expenses
+      const expensesToDelete = projectExpenses.filter(pe => pe.projectName.trim().toLowerCase() === normalizedName);
+      for (const ex of expensesToDelete) {
+        await deleteDoc(doc(db, 'expenses', ex.id));
+      }
+      
+      // Delete from payments
+      const paymentsToDelete = payments.filter(p => p.projectName.trim().toLowerCase() === normalizedName);
+      for (const p of paymentsToDelete) {
+        await deleteDoc(doc(db, 'payments', p.id));
+      }
+      
+      // Delete from collectedBills
+      const billsToDelete = collectedBills.filter(b => b.projectName.trim().toLowerCase() === normalizedName);
+      for (const b of billsToDelete) {
+        await deleteDoc(doc(db, 'collectedBills', b.id));
+      }
+
+      // Delete from projectList
+      const listEntriesToDelete = projectList.filter(pl => pl.projectName.trim().toLowerCase() === normalizedName);
+      for (const pl of listEntriesToDelete) {
+        await deleteDoc(doc(db, 'project_list', pl.id));
+      }
+
+      alert(`Successfully deleted all data for project: ${projectName}`);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `project data for ${projectName}`);
+    }
+  };
+
   const deleteCollectedBill = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'collectedBills', id));
     } catch (error) {
-      console.error("Error deleting collected bill:", error);
+      handleFirestoreError(error, OperationType.DELETE, `collectedBills/${id}`);
     }
   };
 
@@ -572,7 +657,7 @@ function AppContent() {
     try {
       await deleteDoc(doc(db, 'payments', id));
     } catch (error) {
-      console.error("Error deleting payment:", error);
+      handleFirestoreError(error, OperationType.DELETE, `payments/${id}`);
     }
   };
 
@@ -582,7 +667,7 @@ function AppContent() {
         await deleteDoc(doc(db, 'payments', id));
       }
     } catch (error) {
-      console.error("Error deleting payments:", error);
+      handleFirestoreError(error, OperationType.DELETE, `multiple payments`);
     }
   };
 
@@ -590,7 +675,7 @@ function AppContent() {
     try {
       await updateDoc(doc(db, 'payments', id), updated);
     } catch (error) {
-      console.error("Error updating payment:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `payments/${id}`);
     }
   };
 
@@ -598,7 +683,7 @@ function AppContent() {
     try {
       await deleteDoc(doc(db, 'expenses', id));
     } catch (error) {
-      console.error("Error deleting expense:", error);
+      handleFirestoreError(error, OperationType.DELETE, `expenses/${id}`);
     }
   };
 
@@ -608,7 +693,7 @@ function AppContent() {
         await deleteDoc(doc(db, 'expenses', id));
       }
     } catch (error) {
-      console.error("Error deleting expenses:", error);
+      handleFirestoreError(error, OperationType.DELETE, `multiple expenses`);
     }
   };
 
@@ -616,7 +701,7 @@ function AppContent() {
     try {
       await updateDoc(doc(db, 'expenses', id), updated);
     } catch (error) {
-      console.error("Error updating expense:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `expenses/${id}`);
     }
   };
 
@@ -675,7 +760,7 @@ function AppContent() {
         return <ProjectSummaryView payments={payments} projectExpenses={projectExpenses} />;
       case 'PROJECT_LIST':
         if (!hasPermission('projectList', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
-        return <ProjectListView projects={projectList} isAdmin={hasPermission('projectList', 'edit')} onBack={() => setCurrentView('DASHBOARD')} />;
+        return <ProjectListView projects={projectList} isAdmin={isAdmin} onBack={() => setCurrentView('DASHBOARD')} />;
       case 'REVENUE':
         if (!hasPermission('revenue', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return <RevenueView 
@@ -684,6 +769,7 @@ function AppContent() {
           collectedBills={collectedBills}
           onAddCollectedBill={addCollectedBill}
           onDeleteCollectedBill={deleteCollectedBill}
+          onDeleteProjectData={deleteProjectData}
           onUpdateBudget={updateProjectBudget} 
           isAdmin={hasPermission('revenue', 'edit')} 
           isSuperAdmin={isSuperAdmin}
@@ -2151,7 +2237,7 @@ function ProjectListView({ projects, isAdmin, onBack }: { projects: ProjectListE
 
       {isAdmin && (
         <>
-          <div className="fixed bottom-48 right-6 z-50">
+          <div className="fixed bottom-32 right-6 z-50">
             <button 
               onClick={() => setShowAddForm(!showAddForm)}
               className="bg-[#0D47A1] text-white p-3 rounded-full shadow-2xl hover:bg-[#1565C0] transition-all active:scale-95 group flex items-center gap-2 px-5 cursor-pointer"
@@ -2346,6 +2432,7 @@ function RevenueView({
   onUpdateBudget, 
   onAddCollectedBill,
   onDeleteCollectedBill,
+  onDeleteProjectData,
   isAdmin,
   isSuperAdmin,
   projectList
@@ -2356,6 +2443,7 @@ function RevenueView({
   onUpdateBudget: (name: string, budget: number) => void, 
   onAddCollectedBill: (bill: Omit<CollectedBill, 'id'>) => void,
   onDeleteCollectedBill: (id: string) => void,
+  onDeleteProjectData: (name: string) => void,
   isAdmin: boolean,
   isSuperAdmin: boolean,
   projectList: ProjectListEntry[]
@@ -2480,21 +2568,24 @@ function RevenueView({
             <Search className="absolute right-3 top-2.5 w-5 h-5 text-[#B0BEC5]" />
           </div>
 
-          <div className="overflow-hidden rounded-lg border border-[#B0BEC5] bg-white">
-            <table className="w-full text-[10px] sm:text-xs text-center">
+          <div className="overflow-x-auto rounded-lg border border-[#B0BEC5] bg-white">
+            <table className="w-full text-[10px] sm:text-xs text-center min-w-[700px] sm:min-w-full">
               <thead className="bg-[#5D9CEC] text-white">
                 <tr>
+                  <th className="p-2 border-r border-white/20 w-10">SI</th>
                   <th className="p-2 border-r border-white/20">Project Name</th>
                   <th className="p-2 border-r border-white/20">Budget</th>
                   <th className="p-2 border-r border-white/20">Collected</th>
                   <th className="p-2 border-r border-white/20">Total Budget</th>
                   <th className="p-2 border-r border-white/20">Cost</th>
-                  <th className="p-2">Revenue</th>
+                  <th className="p-2 border-r border-white/20">Revenue</th>
+                  {isSuperAdmin && <th className="p-2 w-10">Act</th>}
                 </tr>
               </thead>
               <tbody>
                 {revenueData.map((p, i) => (
                   <tr key={p.name} className={i % 2 === 0 ? 'bg-white' : 'bg-[#F5F9FD]'}>
+                    <td className="p-2 border-r border-[#B0BEC5]/30 text-center">{(i + 1).toString().padStart(2, '0')}</td>
                     <td className="p-2 border-r border-[#B0BEC5]/30">{p.name}</td>
                     <td className="p-2 border-r border-[#B0BEC5]/30 font-bold text-[#0D47A1]">
                       {editingBudget?.name === p.name ? (
@@ -2506,8 +2597,8 @@ function RevenueView({
                             value={editingBudget.value}
                             onChange={e => setEditingBudget({...editingBudget, value: e.target.value})}
                           />
-                          <button onClick={handleBudgetSave} className="p-1 text-green-600 bg-green-50 rounded"><Check className="w-3 h-3" /></button>
-                          <button onClick={() => setEditingBudget(null)} className="p-1 text-red-600 bg-red-50 rounded"><X className="w-3 h-3" /></button>
+                          <button onClick={handleBudgetSave} className="p-1 text-green-600 bg-green-50 rounded cursor-pointer"><Check className="w-3 h-3" /></button>
+                          <button onClick={() => setEditingBudget(null)} className="p-1 text-red-600 bg-red-50 rounded cursor-pointer"><X className="w-3 h-3" /></button>
                         </div>
                       ) : (
                         <div className="flex items-center justify-center gap-1 group">
@@ -2515,7 +2606,7 @@ function RevenueView({
                           {isSuperAdmin && (
                             <button 
                               onClick={() => setEditingBudget({ name: p.name, value: p.budget.toString() })}
-                              className="opacity-0 group-hover:opacity-100 p-0.5 text-blue-500 hover:bg-blue-50 rounded transition-opacity"
+                              className="opacity-0 group-hover:opacity-100 p-0.5 text-blue-500 hover:bg-blue-50 rounded transition-opacity cursor-pointer"
                             >
                               <Edit2 className="w-3 h-3" />
                             </button>
@@ -2530,9 +2621,20 @@ function RevenueView({
                        {formatCurrency(p.totalBudget)}
                     </td>
                     <td className="p-2 border-r border-[#B0BEC5]/30">{formatCurrency(p.cost)}</td>
-                    <td className={`p-2 font-bold ${p.revenue >= 0 ? 'text-[#2E7D32]' : 'text-[#C62828]'}`}>
+                    <td className={`p-2 font-bold border-r border-[#B0BEC5]/30 ${p.revenue >= 0 ? 'text-[#2E7D32]' : 'text-[#C62828]'}`}>
                       {formatCurrency(p.revenue)}
                     </td>
+                    {isSuperAdmin && (
+                      <td className="p-2">
+                        <button 
+                          onClick={() => onDeleteProjectData(p.name)}
+                          className="p-1 text-red-500 hover:bg-red-50 rounded cursor-pointer"
+                          title="Delete Project Records"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {revenueData.length === 0 && (
@@ -2599,15 +2701,17 @@ function RevenueView({
               <table className="w-full text-[10px] sm:text-xs text-center">
                 <thead className="bg-[#4FC3F7] text-white">
                   <tr>
+                    <th className="p-2 border-r border-white/20 w-10">SI</th>
                     <th className="p-2 border-r border-white/20">Date</th>
                     <th className="p-2 border-r border-white/20">Project Name</th>
                     <th className="p-2 border-r border-white/20">Amount</th>
-                    {isSuperAdmin && <th className="p-2">Action</th>}
+                    {isSuperAdmin && <th className="p-2 w-12">Action</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {collectedBills.map((bill, i) => (
-                    <tr key={bill.id} className={i % 2 === 0 ? 'bg-white' : 'bg-[#F5F9FD]'}>
+                    <tr key={bill.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-[#F5F9FD]'}>
+                      <td className="p-2 border-r border-[#B0BEC5]/30 text-center">{(i + 1).toString().padStart(2, '0')}</td>
                       <td className="p-2 border-r border-[#B0BEC5]/30 whitespace-nowrap">{bill.date}</td>
                       <td className="p-2 border-r border-[#B0BEC5]/30 font-medium">{bill.projectName}</td>
                       <td className={`p-2 font-bold text-[#2E7D32] ${isSuperAdmin ? 'border-r border-[#B0BEC5]/30' : ''}`}>
@@ -2616,12 +2720,17 @@ function RevenueView({
                       {isSuperAdmin && (
                         <td className="p-2">
                           <button 
-                            onClick={() => {
+                            onClick={async () => {
                               if(window.confirm("Delete this collection record?")) {
-                                onDeleteCollectedBill(bill.id);
+                                try {
+                                  await onDeleteCollectedBill(bill.id);
+                                  alert("Record deleted successfully!");
+                                } catch (err) {
+                                  // Error handled in parent
+                                }
                               }
                             }}
-                            className="p-1 text-red-600 hover:bg-red-50 rounded"
+                            className="p-1 text-red-600 hover:bg-red-50 rounded cursor-pointer"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -2681,8 +2790,8 @@ function EmployeeTotalsView({ payments, onBack }: { payments: EmployeePayment[],
         <Search className="absolute right-3 top-2.5 w-5 h-5 text-[#B0BEC5]" />
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-[#B0BEC5] bg-white">
-        <table className="w-full text-xs text-left">
+      <div className="overflow-x-auto rounded-lg border border-[#B0BEC5] bg-white">
+        <table className="w-full text-xs text-left min-w-[500px] sm:min-w-full">
           <thead className="bg-[#5D9CEC] text-white">
             <tr>
               <th className="p-2 border-r border-white/20 w-12 text-center">SI</th>
