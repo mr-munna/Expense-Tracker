@@ -22,20 +22,22 @@ export default defineConfig(({mode}) => {
           orientation: 'portrait',
           icons: [
             {
-              src: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png',
+              src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230D47A1'/><text x='50' y='68' font-family='Arial, sans-serif' font-size='50' font-weight='bold' fill='white' text-anchor='middle'>AE</text></svg>",
               sizes: '192x192',
-              type: 'image/png'
+              type: 'image/svg+xml',
+              purpose: 'any'
             },
             {
-              src: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png',
+              src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230D47A1'/><text x='50' y='68' font-family='Arial, sans-serif' font-size='50' font-weight='bold' fill='white' text-anchor='middle'>AE</text></svg>",
               sizes: '512x512',
-              type: 'image/png'
+              type: 'image/svg+xml',
+              purpose: 'any'
             },
             {
-              src: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png',
+              src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230D47A1'/><text x='50' y='68' font-family='Arial, sans-serif' font-size='50' font-weight='bold' fill='white' text-anchor='middle'>AE</text></svg>",
               sizes: '512x512',
-              type: 'image/png',
-              purpose: 'any maskable'
+              type: 'image/svg+xml',
+              purpose: 'maskable'
             }
           ]
         }

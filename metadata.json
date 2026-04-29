@@ -1,5 +1,6 @@
 {
-  "name": "Remix: Project Payment Tracker",
+  "name": "Altasmim Project Tracker",
   "description": "Professional project and employee payment tracking application with offline support.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": []
 }
