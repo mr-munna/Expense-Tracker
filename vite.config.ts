@@ -13,8 +13,8 @@ export default defineConfig(({mode}) => {
       VitePWA({
         registerType: 'autoUpdate',
         manifest: {
-          name: 'Project & Payment Tracker',
-          short_name: 'Tracker',
+          name: 'Altasmim Project Tracker',
+          short_name: 'Altasmim',
           description: 'A professional project and employee payment tracking application.',
           theme_color: '#0D47A1',
           background_color: '#F5F9FD',
@@ -22,21 +22,21 @@ export default defineConfig(({mode}) => {
           orientation: 'portrait',
           icons: [
             {
-              src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230D47A1'/><text x='50' y='68' font-family='Arial, sans-serif' font-size='50' font-weight='bold' fill='white' text-anchor='middle'>AE</text></svg>",
+              src: "https://placehold.jp/0d47a1/ffffff/192x192.png?text=AE",
               sizes: '192x192',
-              type: 'image/svg+xml',
+              type: 'image/png',
               purpose: 'any'
             },
             {
-              src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230D47A1'/><text x='50' y='68' font-family='Arial, sans-serif' font-size='50' font-weight='bold' fill='white' text-anchor='middle'>AE</text></svg>",
+              src: "https://placehold.jp/0d47a1/ffffff/512x512.png?text=AE",
               sizes: '512x512',
-              type: 'image/svg+xml',
+              type: 'image/png',
               purpose: 'any'
             },
             {
-              src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230D47A1'/><text x='50' y='68' font-family='Arial, sans-serif' font-size='50' font-weight='bold' fill='white' text-anchor='middle'>AE</text></svg>",
+              src: "https://placehold.jp/0d47a1/ffffff/512x512.png?text=AE",
               sizes: '512x512',
-              type: 'image/svg+xml',
+              type: 'image/png',
               purpose: 'maskable'
             }
           ]
