@@ -1661,9 +1661,13 @@ function AddDataView({ onAddPayment, onAddProject, onBack, payments, projectExpe
   projectExpenses: ProjectExpense[],
   projectList: ProjectListEntry[]
 }) {
+  const [entryDate, setEntryDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+
   const [empForm, setEmpForm] = useState({
     uniqueId: 'ATE-' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0'),
-    timestamp: new Date().toLocaleString('en-GB'),
     employeeName: '',
     projectName: '',
     payment: '',
@@ -1699,10 +1703,19 @@ function AddDataView({ onAddPayment, onAddProject, onBack, payments, projectExpe
   const handleSave = async () => {
     let saved = false;
 
+    const pad = (n: number) => String(n).padStart(2, '0');
+    let customTimestamp = new Date().toLocaleString('en-GB');
+    if (entryDate) {
+      const d = new Date(entryDate);
+      const now = new Date();
+      customTimestamp = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}, ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    }
+
     try {
       if (empForm.employeeName && empForm.projectName && (empForm.payment || empForm.transport)) {
         await onAddPayment({
           ...empForm,
+          timestamp: customTimestamp,
           payment: parseFloat(empForm.payment || '0'),
           transport: parseFloat(empForm.transport || '0')
         });
@@ -1712,7 +1725,7 @@ function AddDataView({ onAddPayment, onAddProject, onBack, payments, projectExpe
       if (projForm.projectName && (projForm.materialsCost || projForm.transportCost || projForm.othersCost)) {
         await onAddProject({
           ...projForm,
-          timestamp: new Date().toLocaleString('en-GB'),
+          timestamp: customTimestamp,
           materialsCost: parseFloat(projForm.materialsCost || '0'),
           materialsName: projForm.materialsName || '',
           transportCost: parseFloat(projForm.transportCost || '0'),
@@ -1735,14 +1748,26 @@ function AddDataView({ onAddPayment, onAddProject, onBack, payments, projectExpe
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <button 
-          onClick={onBack} 
-          className="p-1 hover:bg-[#F5F5F5] rounded-full transition-colors cursor-pointer"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <h2 className="text-xl font-bold border-b-2 border-[#0D47A1] inline-block pb-1">Add Data</h2>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={onBack} 
+            className="p-1 hover:bg-[#F5F5F5] rounded-full transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <h2 className="text-xl font-bold border-b-2 border-[#0D47A1] inline-block pb-1">Add Data</h2>
+        </div>
+        
+        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-[#B0BEC5] shadow-sm">
+          <label className="text-xs font-bold text-[#455A64]">Date:</label>
+          <input 
+            type="date" 
+            value={entryDate} 
+            onChange={e => setEntryDate(e.target.value)}
+            className="text-sm font-bold text-[#0D47A1] bg-transparent outline-none"
+          />
+        </div>
       </div>
 
       {/* For Employee Section */}
@@ -1750,7 +1775,6 @@ function AddDataView({ onAddPayment, onAddProject, onBack, payments, projectExpe
         <div className="bg-[#BBDEFB] p-2 text-center text-[#0D47A1] font-bold text-sm">FOR EMPLOYEE</div>
         <div className="p-4 space-y-3">
           <InputField label="UNIQUE ID:" value={empForm.uniqueId} readOnly />
-          <InputField label="TIMESTAMP:" value={empForm.timestamp} onChange={v => setEmpForm({...empForm, timestamp: v})} />
           <InputField 
             label="EMPLOYEE NAME:" 
             value={empForm.employeeName} 
@@ -1981,7 +2005,11 @@ function PaymentHistoryView({
         default:
           return true;
       }
-    }).reverse();
+    }).sort((a, b) => {
+      const dateA = parseDate(a.timestamp).getTime();
+      const dateB = parseDate(b.timestamp).getTime();
+      return dateB - dateA;
+    });
   }, [payments, projectExpenses, activeTab, filter, startDate, endDate, selectedYear, selectedMonth]);
 
   return (
@@ -2712,6 +2740,12 @@ function RevenueView({
       .filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
   }, [projectExpenses, payments, collectedBills, search]);
 
+  const sortedCollectedBills = useMemo(() => {
+    return [...collectedBills].sort((a, b) => {
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
+  }, [collectedBills]);
+
   return (
     <div className="space-y-6 pb-12">
       <h2 className="text-xl font-bold border-b-2 border-[#0D47A1] inline-block pb-1 text-[#FF8F00]">Total Revenue</h2>
@@ -2894,7 +2928,7 @@ function RevenueView({
                   </tr>
                 </thead>
                 <tbody>
-                  {collectedBills.map((bill, i) => (
+                  {sortedCollectedBills.map((bill, i) => (
                     <tr key={bill.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-[#F5F9FD]'}>
                       <td className="p-2 border-r border-[#B0BEC5]/30 text-center">{(i + 1).toString().padStart(2, '0')}</td>
                       <td className="p-2 border-r border-[#B0BEC5]/30 whitespace-nowrap">
@@ -3106,25 +3140,43 @@ function ExportView({
       doc.text('Employee Payments', 14, currentY);
       currentY += 5;
 
-      const totalEmployeePayment = payments.reduce((sum, p) => sum + p.payment, 0);
+      const totalPayment = payments.reduce((sum, p) => sum + p.payment, 0);
+      const totalTransport = payments.reduce((sum, p) => sum + (p.transport || 0), 0);
+      const grandTotal = totalPayment + totalTransport;
 
       autoTable(doc, {
         startY: currentY,
-        head: [['Date', 'ID', 'Employee Name', 'Project', 'Amount']],
+        head: [['Date', 'ID', 'Employee Name', 'Project', 'Pay', 'Trn', 'Total']],
         body: [
           ...payments.map(p => [
-            p.timestamp,
+            p.timestamp.split(',')[0],
             p.uniqueId,
             p.employeeName,
             p.projectName,
-            `Tk. ${p.payment.toLocaleString()}`
+            p.payment.toLocaleString(),
+            (p.transport || 0).toLocaleString(),
+            `Tk. ${(p.payment + (p.transport || 0)).toLocaleString()}`
           ]),
-          [{ content: 'TOTAL', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold' } }, { content: `Tk. ${totalEmployeePayment.toLocaleString()}`, styles: { fontStyle: 'bold' } }]
+          [
+            { content: 'TOTAL', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold' } },
+            { content: totalPayment.toLocaleString(), styles: { fontStyle: 'bold' } },
+            { content: totalTransport.toLocaleString(), styles: { fontStyle: 'bold' } },
+            { content: `Tk. ${grandTotal.toLocaleString()}`, styles: { fontStyle: 'bold', fillColor: [255, 243, 224] } }
+          ]
         ],
         theme: 'striped',
         headStyles: { fillColor: [93, 156, 236] },
         footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' },
-        styles: { textColor: [40, 40, 40] }
+        styles: { textColor: [40, 40, 40], fontSize: 8 },
+        columnStyles: {
+          0: { cellWidth: 20 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 35 },
+          3: { cellWidth: 35 },
+          4: { cellWidth: 15, halign: 'right' },
+          5: { cellWidth: 15, halign: 'right' },
+          6: { cellWidth: 25, halign: 'right' },
+        }
       });
       currentY = (doc as any).lastAutoTable.finalY + 15;
     }
