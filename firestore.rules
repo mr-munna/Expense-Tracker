@@ -107,6 +107,11 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    match /quotations/{id} {
+      allow read: if isMember();
+      allow create, update, delete: if isAdmin();
+    }
+
     match /collectedBills/{id} {
       allow read: if isMember();
       allow create, update, delete: if isAdmin();

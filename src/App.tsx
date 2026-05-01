@@ -394,6 +394,7 @@ function AppContent() {
   });
   const [currentTomorrowWorkRows, setCurrentTomorrowWorkRows] = useState<TomorrowWorkRow[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
+  const [quotations, setQuotations] = useState<Bill[]>([]);
   const [collectedBills, setCollectedBills] = useState<CollectedBill[]>([]);
   const [nextBillNumber, setNextBillNumber] = useState<number>(1);
   const [nextQuotationNumber, setNextQuotationNumber] = useState<number>(1);
@@ -491,10 +492,21 @@ function AppContent() {
       const billsList = snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Bill));
       setBills(billsList);
       
-      // Update next numbers
-      const maxBill = Math.max(0, ...billsList.filter(b => b.type === 'BILL').map(b => parseInt(b.billNumber.split('-')[1]) || 0));
-      const maxQuo = Math.max(0, ...billsList.filter(b => b.type === 'QUOTATION').map(b => parseInt(b.billNumber.split('-')[1]) || 0));
+      const maxBill = Math.max(0, ...billsList.map(b => {
+        const match = b.billNumber?.match(/\d+/);
+        return match ? parseInt(match[0], 10) : 0;
+      }));
       setNextBillNumber(maxBill + 1);
+    });
+
+    const unsubQuotations = onSnapshot(collection(db, 'quotations'), (snap) => {
+      const quotationsList = snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Bill));
+      setQuotations(quotationsList);
+      
+      const maxQuo = Math.max(0, ...quotationsList.map(b => {
+        const match = b.billNumber?.match(/\d+/);
+        return match ? parseInt(match[0], 10) : 0;
+      }));
       setNextQuotationNumber(maxQuo + 1);
     });
 
@@ -522,6 +534,7 @@ function AppContent() {
       unsubPayments();
       unsubExpenses();
       unsubBills();
+      unsubQuotations();
       unsubCollectedBills();
       unsubSettings();
       unsubTomorrow();
@@ -879,7 +892,7 @@ function AppContent() {
         return <ExportView 
           payments={payments} 
           projectExpenses={projectExpenses} 
-          bills={bills}
+          bills={[...bills, ...quotations]}
           tomorrowWorkData={tomorrowWorkData}
           nextBillNumber={nextBillNumber}
           nextQuotationNumber={nextQuotationNumber}
@@ -1014,10 +1027,10 @@ function AppContent() {
             onSave={async (bill) => { 
               try {
                 if (editingBill) {
-                  await updateDoc(doc(db, 'bills', bill.id), bill as any);
+                  await updateDoc(doc(db, 'quotations', bill.id), bill as any);
                   setEditingBill(null);
                 } else {
-                  await setDoc(doc(db, 'bills', bill.id), { ...bill, createdBy: user?.uid, createdByEmail: user?.email || null }); 
+                  await setDoc(doc(db, 'quotations', bill.id), { ...bill, createdBy: user?.uid, createdByEmail: user?.email || null }); 
                 }
                 setCurrentView('BILL_HISTORY'); 
               } catch (error: any) {
@@ -1032,7 +1045,7 @@ function AppContent() {
         if (!hasPermission('historyLogs', 'view')) return <DashboardView stats={stats} payments={payments} projectExpenses={projectExpenses} onDetails={() => setCurrentView('PAYMENT_HISTORY')} />;
         return (
           <BillHistoryView 
-            bills={bills} 
+            bills={[...bills, ...quotations]} 
             onEdit={(bill) => {
               setEditingBill(bill);
               setCurrentView(bill.type === 'BILL' ? 'BILL' : 'QUOTATION');
@@ -5217,8 +5230,10 @@ function BillHistoryView({ bills, onEdit, onBack, pdfSettings, isAdmin, isSuperA
 
   const deleteBill = async (id: string) => {
     if (confirm("Are you sure you want to delete this?")) {
+      const bill = bills.find(b => b.id === id);
+      const colName = bill?.type === 'QUOTATION' ? 'quotations' : 'bills';
       try {
-        await deleteDoc(doc(db, 'bills', id));
+        await deleteDoc(doc(db, colName, id));
       } catch (error) {
         console.error("Error deleting bill:", error);
       }
