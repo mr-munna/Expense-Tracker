@@ -675,7 +675,7 @@ function AppContent() {
   const addPayment = async (payment: Omit<EmployeePayment, 'id'>) => {
     try {
       const id = generateId();
-      await setDoc(doc(db, 'payments', id), { ...payment, id, createdBy: user?.uid, createdByEmail: user?.email || undefined });
+      await setDoc(doc(db, 'payments', id), { ...payment, id, createdBy: user?.uid, createdByEmail: user?.email || null });
     } catch (error: any) {
       console.error("Error adding payment:", error);
       alert("Failed to save data. You may not have permission.");
@@ -686,7 +686,7 @@ function AppContent() {
   const addProjectExpense = async (expense: Omit<ProjectExpense, 'id'>) => {
     try {
       const id = generateId();
-      await setDoc(doc(db, 'expenses', id), { ...expense, id, createdBy: user?.uid, createdByEmail: user?.email || undefined });
+      await setDoc(doc(db, 'expenses', id), { ...expense, id, createdBy: user?.uid, createdByEmail: user?.email || null });
     } catch (error: any) {
       console.error("Error adding expense:", error);
       alert("Failed to save data. You may not have permission.");
@@ -697,7 +697,7 @@ function AppContent() {
   const addCollectedBill = async (bill: Omit<CollectedBill, 'id'>) => {
     try {
       const id = generateId();
-      await setDoc(doc(db, 'collectedBills', id), { ...bill, id, createdBy: user?.uid, createdByEmail: user?.email || undefined });
+      await setDoc(doc(db, 'collectedBills', id), { ...bill, id, createdBy: user?.uid, createdByEmail: user?.email || null });
     } catch (error: any) {
       console.error("Error adding collected bill:", error);
       alert("Failed to collect bill. You may not have permission.");
@@ -992,7 +992,7 @@ function AppContent() {
                   await updateDoc(doc(db, 'bills', bill.id), bill as any);
                   setEditingBill(null);
                 } else {
-                  await setDoc(doc(db, 'bills', bill.id), { ...bill, createdBy: user?.uid, createdByEmail: user?.email || undefined }); 
+                  await setDoc(doc(db, 'bills', bill.id), { ...bill, createdBy: user?.uid, createdByEmail: user?.email || null }); 
                 }
                 setCurrentView('BILL_HISTORY'); 
               } catch (error: any) {
@@ -1017,7 +1017,7 @@ function AppContent() {
                   await updateDoc(doc(db, 'bills', bill.id), bill as any);
                   setEditingBill(null);
                 } else {
-                  await setDoc(doc(db, 'bills', bill.id), { ...bill, createdBy: user?.uid, createdByEmail: user?.email || undefined }); 
+                  await setDoc(doc(db, 'bills', bill.id), { ...bill, createdBy: user?.uid, createdByEmail: user?.email || null }); 
                 }
                 setCurrentView('BILL_HISTORY'); 
               } catch (error: any) {
@@ -3803,7 +3803,7 @@ function TomorrowWorkView({
       workDescription: '',
       manpowerList: [],
       overtime: '',
-      createdByEmail: auth.currentUser?.email || undefined
+      createdByEmail: auth.currentUser?.email || null
     }]);
   };
 
@@ -5013,7 +5013,7 @@ function BillView({ type, nextNumber, onSave, onBack, initialBill, pdfSettings }
       totalInWords: numberToWords(grandTotal),
       grandTotal,
       preparedBy,
-      signature,
+      signature: signature || null,
       termsAndConditions: terms,
       timestamp: initialBill ? initialBill.timestamp : new Date().toLocaleString('en-GB'),
       revision
@@ -5800,8 +5800,8 @@ export function MeetingsView({ meetings, isAdmin, isSuperAdmin, onBack }: { meet
         agenda,
         reminderEnabled,
         createdAt: new Date().toISOString(),
-        notificationId: reminderEnabled ? notificationId : undefined,
-        createdByEmail: auth.currentUser?.email || undefined,
+        notificationId: reminderEnabled ? notificationId : null,
+        createdByEmail: auth.currentUser?.email || null,
       };
 
       const docRef = await addDoc(collection(db, 'meetings'), newMeeting);
