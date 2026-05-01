@@ -1,0 +1,263 @@
+function BillView({ type, nextNumber, onSave, onBack, initialBill, pdfSettings }: { type: 'BILL' | 'QUOTATION', nextNumber: number, onSave: (bill: Bill) => void, onBack: () => void, initialBill?: Bill, pdfSettings: PDFSettings }) {
+  const billNumber = initialBill ? initialBill.billNumber : `AE${nextNumber.toString().padStart(4, '0')}`;
+  const [recipientName, setRecipientName] = useState(initialBill?.recipientName || '');
+  const [site, setSite] = useState(initialBill?.site || '');
+  const [subject, setSubject] = useState(initialBill?.subject || (type === 'BILL' ? 'Bill for tiles installation work.' : 'Quotation for tiles installation work.'));
+  const [date, setDate] = useState(initialBill?.date || new Date().toISOString().split('T')[0]);
+  const [items, setItems] = useState<BillItem[]>(initialBill?.items || [
+    { id: generateId(), areaName: '', tiles: '', qty: 0, unit: 'sft', price: 0, total: 0 }
+  ]);
+  const [preparedBy, setPreparedBy] = useState(initialBill?.preparedBy || 'Md Shahiduzzaman Anik');
+  const [signature, setSignature] = useState<string | undefined>(initialBill?.signature || localStorage.getItem('savedSignature') || undefined);
+  const [terms, setTerms] = useState(initialBill?.termsAndConditions || (type === 'QUOTATION' ? '1. Payment should be made within 7 days.\n2. 50% advance required.' : ''));
+
+  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result as string;
+        setSignature(base64);
+        localStorage.setItem('savedSignature', base64);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const addItem = () => {
+    setItems([...items, { id: generateId(), areaName: '', tiles: '', qty: 0, unit: 'sft', price: 0, total: 0 }]);
+  };
+
+  const removeItem = (id: string) => {
+    if (items.length > 1) {
+      setItems(items.filter(item => item.id !== id));
+    }
+  };
+
+  const updateItem = (id: string, field: keyof BillItem, value: any) => {
+    setItems(items.map(item => {
+      if (item.id === id) {
+        const updatedItem = { ...item, [field]: value };
+        if (field === 'qty' || field === 'price') {
+          updatedItem.total = (updatedItem.qty || 0) * (updatedItem.price || 0);
+        }
+        return updatedItem;
+      }
+      return item;
+    }));
+  };
+
+  const grandTotal = items.reduce((sum, item) => sum + item.total, 0);
+
+  const handleSave = async () => {
+    if (!recipientName.trim()) {
+      alert('Please enter recipient name');
+      return;
+    }
+
+    let revision = initialBill?.revision || 0;
+    if (initialBill && initialBill.grandTotal !== grandTotal) {
+      revision += 1;
+    }
+
+    const newBill: Bill = {
+      id: initialBill ? initialBill.id : generateId(),
+      type,
+      billNumber,
+      date,
+      recipientName,
+      site,
+      subject,
+      items,
+      totalInWords: numberToWords(grandTotal),
+      grandTotal,
+      preparedBy,
+      signature: signature || null,
+      termsAndConditions: terms,
+      timestamp: initialBill ? initialBill.timestamp : new Date().toLocaleString('en-GB'),
+      revision
+    };
+    
+    try {
+      await onSave(newBill);
+      // Automatically download PDF on save
+      await generateBillPDF(newBill, 'download', pdfSettings);
+    } catch (error) {
+      console.error("Error in save sequence:", error);
+      // Inner onSave handles alert already
+    }
+  };
+
+  return (
+    <div className="space-y-6 pb-20">
+      <div className="flex items-center gap-2">
+        <button onClick={onBack} className="p-1 hover:bg-[#F5F5F5] rounded-full transition-colors cursor-pointer">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h2 className="text-xl font-bold border-b-2 border-[#0D47A1] inline-block pb-1">
+          {initialBill ? 'Edit' : 'Create'} {type === 'BILL' ? 'Bill' : 'Quotation'}
+        </h2>
+      </div>
+
+      <div className="bg-white p-4 rounded-xl shadow-md border border-[#B0BEC5] space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-[#78909C] uppercase">Bill Number</label>
+            <div className="w-full p-2 border border-[#B0BEC5] rounded bg-gray-100 text-sm font-bold text-[#0D47A1]">
+              {billNumber}
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-[#78909C] uppercase">Recipient Name</label>
+            <input 
+              type="text" 
+              value={recipientName} 
+              onChange={(e) => setRecipientName(e.target.value)}
+              className="w-full p-2 border border-[#B0BEC5] rounded bg-[#F5F9FD] text-sm"
+              placeholder="Recipient Name"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-[#78909C] uppercase">Date</label>
+            <input 
+              type="date" 
+              value={date} 
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full p-2 border border-[#B0BEC5] rounded bg-[#F5F9FD] text-sm"
+            />
+          </div>
+          <div className="space-y-1 md:col-span-2">
+            <label className="text-[10px] font-bold text-[#78909C] uppercase">Site Name</label>
+            <input 
+              type="text" 
+              value={site} 
+              onChange={(e) => setSite(e.target.value)}
+              className="w-full p-2 border border-[#B0BEC5] rounded bg-[#F5F9FD] text-sm"
+              placeholder="Site Name"
+            />
+          </div>
+          <div className="space-y-1 md:col-span-2">
+            <label className="text-[10px] font-bold text-[#78909C] uppercase">Subject</label>
+            <input 
+              type="text" 
+              value={subject} 
+              onChange={(e) => setSubject(e.target.value)}
+              className="w-full p-2 border border-[#B0BEC5] rounded bg-[#F5F9FD] text-sm"
+            />
+          </div>
+          
+          {type === 'QUOTATION' && (
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-[10px] font-bold text-[#78909C] uppercase">Terms & Conditions</label>
+              <textarea 
+                value={terms} 
+                onChange={(e) => setTerms(e.target.value)}
+                className="w-full p-2 border border-[#B0BEC5] rounded bg-[#F5F9FD] text-sm h-20"
+                placeholder="Enter terms and conditions..."
+              />
+            </div>
+          )}
+
+          <div className="space-y-1 md:col-span-2">
+            <label className="text-[10px] font-bold text-[#78909C] uppercase">Signature (Upload Image)</label>
+            <div className="flex items-center gap-4">
+              <input 
+                type="file" 
+                accept="image/*"
+                onChange={handleSignatureUpload}
+                className="text-xs cursor-pointer"
+              />
+              {signature && (
+                <img src={signature} alt="Signature" className="h-10 border border-[#B0BEC5] rounded" />
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex justify-between items-center">
+            <label className="text-[10px] font-bold text-[#78909C] uppercase">Items</label>
+            <button onClick={addItem} className="text-xs font-bold text-[#0D47A1] flex items-center gap-1 hover:underline">
+              <Plus className="w-3 h-3" /> Add Item
+            </button>
+          </div>
+          
+          <div className="space-y-3">
+            {items.map((item, index) => (
+              <div key={item.id} className="p-3 border border-[#B0BEC5]/30 rounded-lg bg-[#F5F9FD] space-y-2 relative pr-10">
+                <button 
+                  onClick={() => removeItem(item.id)}
+                  className="absolute right-2 top-2 text-red-500 hover:bg-red-50 p-1 rounded"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="col-span-2">
+                    <input 
+                      type="text" 
+                      placeholder="Area Name"
+                      value={item.areaName}
+                      onChange={(e) => updateItem(item.id, 'areaName', e.target.value)}
+                      className="w-full p-1.5 border border-[#B0BEC5] rounded text-xs"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <input 
+                      type="text" 
+                      placeholder="Work Description"
+                      value={item.tiles}
+                      onChange={(e) => updateItem(item.id, 'tiles', e.target.value)}
+                      className="w-full p-1.5 border border-[#B0BEC5] rounded text-xs"
+                    />
+                  </div>
+                  <div>
+                    <input 
+                      type="number" 
+                      placeholder="Qty"
+                      value={item.qty || ''}
+                      onChange={(e) => updateItem(item.id, 'qty', parseFloat(e.target.value) || 0)}
+                      className="w-full p-1.5 border border-[#B0BEC5] rounded text-xs"
+                    />
+                  </div>
+                  <div>
+                    <input 
+                      type="text" 
+                      placeholder="Unit (sft/rft)"
+                      value={item.unit}
+                      onChange={(e) => updateItem(item.id, 'unit', e.target.value)}
+                      className="w-full p-1.5 border border-[#B0BEC5] rounded text-xs"
+                    />
+                  </div>
+                  <div>
+                    <input 
+                      type="number" 
+                      placeholder="Price"
+                      value={item.price || ''}
+                      onChange={(e) => updateItem(item.id, 'price', parseFloat(e.target.value) || 0)}
+                      className="w-full p-1.5 border border-[#B0BEC5] rounded text-xs"
+                    />
+                  </div>
+                  <div className="flex items-center justify-end font-bold text-xs">
+                    Total: {item.total.toLocaleString()}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="pt-4 border-t border-[#B0BEC5] flex justify-between items-center gap-2">
+          <div className="px-3 py-2 bg-[#E8F5E9] text-[#2E7D32] rounded-lg font-bold text-xs sm:text-sm">
+            Grand Total: Tk. {grandTotal.toLocaleString()}
+          </div>
+          <button 
+            onClick={handleSave}
+            className="px-3 py-2 bg-[#0D47A1] text-white rounded-lg font-bold hover:bg-[#1565C0] transition-all text-[10px] sm:text-sm"
+          >
+            {initialBill ? 'Update' : 'Submit'} {type === 'BILL' ? 'Bill' : 'Quotation'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

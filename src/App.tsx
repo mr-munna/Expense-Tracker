@@ -4953,7 +4953,7 @@ function PDFSettingsView({ settings, onSave, onBack }: { settings: PDFSettings, 
 }
 
 function BillView({ type, nextNumber, onSave, onBack, initialBill, pdfSettings }: { type: 'BILL' | 'QUOTATION', nextNumber: number, onSave: (bill: Bill) => void, onBack: () => void, initialBill?: Bill, pdfSettings: PDFSettings }) {
-  const billNumber = initialBill ? initialBill.billNumber : `AE${nextNumber.toString().padStart(4, '0')}`;
+  const billNumber = initialBill ? initialBill.billNumber : `AE-${type === 'BILL' ? 'B' : 'Q'}-${nextNumber.toString().padStart(4, '0')}`;
   const [recipientName, setRecipientName] = useState(initialBill?.recipientName || '');
   const [site, setSite] = useState(initialBill?.site || '');
   const [subject, setSubject] = useState(initialBill?.subject || (type === 'BILL' ? 'Bill for tiles installation work.' : 'Quotation for tiles installation work.'));
@@ -4961,8 +4961,12 @@ function BillView({ type, nextNumber, onSave, onBack, initialBill, pdfSettings }
   const [items, setItems] = useState<BillItem[]>(initialBill?.items || [
     { id: generateId(), areaName: '', tiles: '', qty: 0, unit: 'sft', price: 0, total: 0 }
   ]);
-  const [preparedBy, setPreparedBy] = useState(initialBill?.preparedBy || 'Md Shahiduzzaman Anik');
+  const [preparedBy, setPreparedBy] = useState(initialBill?.preparedBy || localStorage.getItem('savedPreparedBy') || 'Md Shahiduzzaman Anik');
   const [signature, setSignature] = useState<string | undefined>(initialBill?.signature || localStorage.getItem('savedSignature') || undefined);
+  
+  useEffect(() => {
+    localStorage.setItem('savedPreparedBy', preparedBy);
+  }, [preparedBy]);
   const [terms, setTerms] = useState(initialBill?.termsAndConditions || (type === 'QUOTATION' ? '1. Payment should be made within 7 days.\n2. 50% advance required.' : ''));
 
   const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -5113,17 +5117,26 @@ function BillView({ type, nextNumber, onSave, onBack, initialBill, pdfSettings }
           )}
 
           <div className="space-y-1 md:col-span-2">
-            <label className="text-[10px] font-bold text-[#78909C] uppercase">Signature (Upload Image)</label>
-            <div className="flex items-center gap-4">
+            <label className="text-[10px] font-bold text-[#78909C] uppercase">Signature Details</label>
+            <div className="flex flex-col gap-2">
               <input 
-                type="file" 
-                accept="image/*"
-                onChange={handleSignatureUpload}
-                className="text-xs cursor-pointer"
+                type="text" 
+                value={preparedBy} 
+                onChange={(e) => setPreparedBy(e.target.value)}
+                className="w-full p-2 border border-[#B0BEC5] rounded bg-[#F5F9FD] text-sm"
+                placeholder="Signatory Name (e.g., Md Shahiduzzaman Anik)"
               />
-              {signature && (
-                <img src={signature} alt="Signature" className="h-10 border border-[#B0BEC5] rounded" />
-              )}
+              <div className="flex items-center gap-4">
+                <input 
+                  type="file" 
+                  accept="image/*"
+                  onChange={handleSignatureUpload}
+                  className="text-xs cursor-pointer"
+                />
+                {signature && (
+                  <img src={signature} alt="Signature" className="h-10 border border-[#B0BEC5] rounded" />
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -5204,12 +5217,39 @@ function BillView({ type, nextNumber, onSave, onBack, initialBill, pdfSettings }
           <div className="px-3 py-2 bg-[#E8F5E9] text-[#2E7D32] rounded-lg font-bold text-xs sm:text-sm">
             Grand Total: Tk. {grandTotal.toLocaleString()}
           </div>
-          <button 
-            onClick={handleSave}
-            className="px-3 py-2 bg-[#0D47A1] text-white rounded-lg font-bold hover:bg-[#1565C0] transition-all text-[10px] sm:text-sm"
-          >
-            {initialBill ? 'Update' : 'Submit'} {type === 'BILL' ? 'Bill' : 'Quotation'}
-          </button>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => {
+                const previewBill: Bill = {
+                  id: initialBill ? initialBill.id : generateId(),
+                  type,
+                  billNumber,
+                  date,
+                  recipientName: recipientName || 'Preview Recipient',
+                  site: site || 'Preview Site',
+                  subject: subject || 'Preview Subject',
+                  items,
+                  totalInWords: numberToWords(grandTotal),
+                  grandTotal,
+                  preparedBy: preparedBy || 'Preview Signatory',
+                  signature: signature || null,
+                  termsAndConditions: terms,
+                  timestamp: initialBill ? initialBill.timestamp : new Date().toLocaleString('en-GB'),
+                  revision: initialBill ? initialBill.revision : 0
+                };
+                generateBillPDF(previewBill, 'view', pdfSettings);
+              }}
+              className="px-3 py-2 bg-[#F5F5F5] text-[#0D47A1] border border-[#0D47A1] rounded-lg font-bold hover:bg-[#E3F2FD] transition-all text-[10px] sm:text-sm"
+            >
+              Preview
+            </button>
+            <button 
+              onClick={handleSave}
+              className="px-3 py-2 bg-[#0D47A1] text-white rounded-lg font-bold hover:bg-[#1565C0] transition-all text-[10px] sm:text-sm"
+            >
+              {initialBill ? 'Update' : 'Submit'} {type === 'BILL' ? 'Bill' : 'Quotation'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
