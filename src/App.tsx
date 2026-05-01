@@ -101,6 +101,19 @@ const formatCurrency = (amount: number) => {
   return `Tk. ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
+const generateId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    try {
+      return generateId();
+    } catch (e) {}
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
 const DEFAULT_PDF_SETTINGS: PDFSettings = {
   companyName: 'ALTASMIM ENGINEERING',
   headerBgColor: '#FFFFFF',
@@ -524,7 +537,7 @@ function AppContent() {
       setCurrentTomorrowWorkRows(saved);
     } else {
       setCurrentTomorrowWorkRows([{
-        id: crypto.randomUUID(),
+        id: generateId(),
         projectName: '',
         projectAddress: '',
         workDescription: '',
@@ -661,7 +674,7 @@ function AppContent() {
 
   const addPayment = async (payment: Omit<EmployeePayment, 'id'>) => {
     try {
-      const id = crypto.randomUUID();
+      const id = generateId();
       await setDoc(doc(db, 'payments', id), { ...payment, id, createdBy: user?.uid, createdByEmail: user?.email || undefined });
     } catch (error: any) {
       console.error("Error adding payment:", error);
@@ -672,7 +685,7 @@ function AppContent() {
 
   const addProjectExpense = async (expense: Omit<ProjectExpense, 'id'>) => {
     try {
-      const id = crypto.randomUUID();
+      const id = generateId();
       await setDoc(doc(db, 'expenses', id), { ...expense, id, createdBy: user?.uid, createdByEmail: user?.email || undefined });
     } catch (error: any) {
       console.error("Error adding expense:", error);
@@ -683,7 +696,7 @@ function AppContent() {
 
   const addCollectedBill = async (bill: Omit<CollectedBill, 'id'>) => {
     try {
-      const id = crypto.randomUUID();
+      const id = generateId();
       await setDoc(doc(db, 'collectedBills', id), { ...bill, id, createdBy: user?.uid, createdByEmail: user?.email || undefined });
     } catch (error: any) {
       console.error("Error adding collected bill:", error);
@@ -799,7 +812,7 @@ function AppContent() {
       }
     } else {
       try {
-        const id = crypto.randomUUID();
+        const id = generateId();
         await setDoc(doc(db, 'expenses', id), {
           id,
           uniqueId: 'ATP-' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0'),
@@ -982,8 +995,9 @@ function AppContent() {
                   await setDoc(doc(db, 'bills', bill.id), { ...bill, createdBy: user?.uid, createdByEmail: user?.email || undefined }); 
                 }
                 setCurrentView('BILL_HISTORY'); 
-              } catch (error) {
+              } catch (error: any) {
                 console.error("Error saving bill:", error);
+                alert("Failed to save bill. Error: " + (error.message || String(error)));
               }
             }} 
             onBack={() => { setEditingBill(null); setCurrentView('DASHBOARD'); }} 
@@ -1006,8 +1020,9 @@ function AppContent() {
                   await setDoc(doc(db, 'bills', bill.id), { ...bill, createdBy: user?.uid, createdByEmail: user?.email || undefined }); 
                 }
                 setCurrentView('BILL_HISTORY'); 
-              } catch (error) {
+              } catch (error: any) {
                 console.error("Error saving quotation:", error);
+                alert("Failed to save quotation. Error: " + (error.message || String(error)));
               }
             }} 
             onBack={() => { setEditingBill(null); setCurrentView('DASHBOARD'); }} 
@@ -1703,17 +1718,18 @@ function AddDataView({ onAddPayment, onAddProject, onBack, payments, projectExpe
   const handleSave = async () => {
     let saved = false;
 
-    const pad = (n: number) => String(n).padStart(2, '0');
-    let customTimestamp = new Date().toLocaleString('en-GB');
-    if (entryDate) {
-      const d = new Date(entryDate);
-      const now = new Date();
-      customTimestamp = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}, ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-    }
+  const pad = (n: number) => String(n).padStart(2, '0');
+  let customTimestamp = new Date().toLocaleString('en-GB');
+  if (entryDate) {
+    const d = new Date(entryDate);
+    const now = new Date();
+    customTimestamp = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}, ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  }
 
-    try {
-      if (empForm.employeeName && empForm.projectName && (empForm.payment || empForm.transport)) {
-        await onAddPayment({
+  try {
+    if (empForm.employeeName && empForm.projectName && (empForm.payment || empForm.transport)) {
+      await onAddPayment({
+
           ...empForm,
           timestamp: customTimestamp,
           payment: parseFloat(empForm.payment || '0'),
@@ -2361,7 +2377,7 @@ function ProjectListView({ projects, isAdmin, onBack }: { projects: ProjectListE
         await updateDoc(doc(db, 'project_list', editingId), form);
         setEditingId(null);
       } else {
-        const newId = crypto.randomUUID();
+        const newId = generateId();
         const newProject = { ...form, id: newId } as ProjectListEntry;
         await setDoc(doc(db, 'project_list', newId), newProject);
       }
@@ -3781,7 +3797,7 @@ function TomorrowWorkView({
 
   const addRow = () => {
     setRows([...rows, {
-      id: crypto.randomUUID(),
+      id: generateId(),
       projectName: '',
       projectAddress: '',
       workDescription: '',
@@ -3832,7 +3848,7 @@ function TomorrowWorkView({
 
   const clearAllRows = () => {
     setRows([{
-      id: crypto.randomUUID(),
+      id: generateId(),
       projectName: '',
       projectAddress: '',
       workDescription: '',
@@ -4930,7 +4946,7 @@ function BillView({ type, nextNumber, onSave, onBack, initialBill, pdfSettings }
   const [subject, setSubject] = useState(initialBill?.subject || (type === 'BILL' ? 'Bill for tiles installation work.' : 'Quotation for tiles installation work.'));
   const [date, setDate] = useState(initialBill?.date || new Date().toISOString().split('T')[0]);
   const [items, setItems] = useState<BillItem[]>(initialBill?.items || [
-    { id: crypto.randomUUID(), areaName: '', tiles: '', qty: 0, unit: 'sft', price: 0, total: 0 }
+    { id: generateId(), areaName: '', tiles: '', qty: 0, unit: 'sft', price: 0, total: 0 }
   ]);
   const [preparedBy, setPreparedBy] = useState(initialBill?.preparedBy || 'Md Shahiduzzaman Anik');
   const [signature, setSignature] = useState<string | undefined>(initialBill?.signature || localStorage.getItem('savedSignature') || undefined);
@@ -4950,7 +4966,7 @@ function BillView({ type, nextNumber, onSave, onBack, initialBill, pdfSettings }
   };
 
   const addItem = () => {
-    setItems([...items, { id: crypto.randomUUID(), areaName: '', tiles: '', qty: 0, unit: 'sft', price: 0, total: 0 }]);
+    setItems([...items, { id: generateId(), areaName: '', tiles: '', qty: 0, unit: 'sft', price: 0, total: 0 }]);
   };
 
   const removeItem = (id: string) => {
@@ -4986,7 +5002,7 @@ function BillView({ type, nextNumber, onSave, onBack, initialBill, pdfSettings }
     }
 
     const newBill: Bill = {
-      id: initialBill ? initialBill.id : crypto.randomUUID(),
+      id: initialBill ? initialBill.id : generateId(),
       type,
       billNumber,
       date,
