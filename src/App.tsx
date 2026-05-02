@@ -83,9 +83,9 @@ import {
   ProjectListEntry,
   Meeting,
 } from "./types";
-import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/Page/AnnotationLayer.css';
-import 'react-pdf/dist/Page/TextLayer.css';
+import { Document, Page, pdfjs } from "react-pdf";
+import "react-pdf/dist/Page/AnnotationLayer.css";
+import "react-pdf/dist/Page/TextLayer.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -3514,7 +3514,7 @@ function ProjectListView({
               </div>
 
               {isAdmin && (
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-2 right-2 flex gap-1 bg-white/90 p-1 rounded-lg backdrop-blur-sm pointer-events-none group-hover:pointer-events-auto shadow-sm">
+                <div className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity absolute top-2 right-2 flex gap-1 bg-white/90 p-1 rounded-lg backdrop-blur-sm pointer-events-auto shadow-sm">
                   <button
                     onClick={() => handleEdit(project)}
                     className="p-1 text-blue-600 hover:bg-blue-50 rounded"
@@ -6863,7 +6863,7 @@ function BillView({
       if (pageEl) {
         containerRef.current.scrollTo({
           top: pageEl.offsetTop - containerRef.current.offsetTop - 16,
-          behavior: 'smooth'
+          behavior: "smooth",
         });
       }
     }
@@ -6872,10 +6872,10 @@ function BillView({
   useEffect(() => {
     const handleResize = () => {
       if (containerRef.current) {
-        setContainerWidth(containerRef.current.clientWidth - 32); 
+        setContainerWidth(containerRef.current.clientWidth - 32);
       }
     };
-    
+
     // Slight delay to ensure DOM is ready
     const timeoutId = setTimeout(handleResize, 100);
 
@@ -7195,16 +7195,10 @@ function BillView({
           </div>
 
           <div className="space-y-2">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center mb-2">
               <label className="text-[10px] font-bold text-[#78909C] uppercase">
                 Items
               </label>
-              <button
-                onClick={addItem}
-                className="text-xs font-bold text-[#0D47A1] flex items-center gap-1 hover:underline"
-              >
-                <Plus className="w-3 h-3" /> Add Item
-              </button>
             </div>
 
             <div className="space-y-3">
@@ -7290,6 +7284,13 @@ function BillView({
                   </div>
                 </div>
               ))}
+
+              <button
+                onClick={addItem}
+                className="w-full py-2 hover:bg-[#E3F2FD] border-2 border-dashed border-[#90CAF9] rounded-lg text-sm font-bold text-[#0D47A1] flex items-center justify-center gap-2 transition-colors"
+              >
+                <Plus className="w-4 h-4" /> Add Item
+              </button>
             </div>
           </div>
 
@@ -7310,7 +7311,10 @@ function BillView({
         </div>
       </div>
 
-      <div ref={containerRef} className="w-full xl:w-1/2 h-[600px] xl:h-[calc(100vh-4rem)] xl:sticky xl:top-4 rounded-xl overflow-y-auto shadow-lg border border-[#B0BEC5] bg-gray-50 flex-shrink-0 flex flex-col items-center p-4">
+      <div
+        ref={containerRef}
+        className="w-full xl:w-1/2 h-[600px] xl:h-[calc(100vh-4rem)] xl:sticky xl:top-4 rounded-xl overflow-y-auto shadow-lg border border-[#B0BEC5] bg-gray-50 flex-shrink-0 flex flex-col items-center p-4"
+      >
         {previewUrl ? (
           <Document
             file={previewUrl}
@@ -7324,16 +7328,16 @@ function BillView({
             className="flex flex-col items-center gap-4 w-full"
           >
             {Array.from(new Array(numPages), (el, index) => (
-              <div 
-                key={`page_${index + 1}`} 
-                ref={el => pageRefs.current[index] = el}
+              <div
+                key={`page_${index + 1}`}
+                ref={(el) => (pageRefs.current[index] = el)}
                 className="w-full flex justify-center shadow-md relative"
               >
-                <Page 
-                  pageNumber={index + 1} 
-                  renderAnnotationLayer={false} 
-                  renderTextLayer={false} 
-                  width={containerWidth} 
+                <Page
+                  pageNumber={index + 1}
+                  renderAnnotationLayer={false}
+                  renderTextLayer={false}
+                  width={containerWidth}
                 />
               </div>
             ))}
