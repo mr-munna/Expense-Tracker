@@ -49,6 +49,7 @@ import {
   Bell,
   BellRing,
   Clock,
+  Pencil,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { jsPDF } from "jspdf";
@@ -3514,7 +3515,7 @@ function ProjectListView({
               </div>
 
               {isAdmin && (
-                <div className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity absolute top-2 right-2 flex gap-1 bg-white/90 p-1 rounded-lg backdrop-blur-sm pointer-events-auto shadow-sm">
+                <div className="absolute top-2 right-2 flex gap-1 bg-white/80 p-1 rounded-lg backdrop-blur-sm shadow-sm opacity-100 z-10">
                   <button
                     onClick={() => handleEdit(project)}
                     className="p-1 text-blue-600 hover:bg-blue-50 rounded"
@@ -8053,6 +8054,27 @@ export function MeetingsView({
   const [meetingTime, setMeetingTime] = useState("");
   const [agenda, setAgenda] = useState("");
   const [reminderEnabled, setReminderEnabled] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const resetForm = () => {
+    setClientName("");
+    setMeetingDate("");
+    setMeetingTime("");
+    setAgenda("");
+    setReminderEnabled(true);
+    setShowAddForm(false);
+    setEditingId(null);
+  };
+
+  const handleEdit = (meeting: Meeting) => {
+    setEditingId(meeting.id);
+    setClientName(meeting.clientName);
+    setMeetingDate(meeting.meetingDate);
+    setMeetingTime(meeting.meetingTime);
+    setAgenda(meeting.agenda);
+    setReminderEnabled(meeting.reminderEnabled ?? true);
+    setShowAddForm(true);
+  };
 
   const requestPermissions = async () => {
     try {
@@ -8126,22 +8148,31 @@ export function MeetingsView({
         createdByEmail: auth.currentUser?.email || null,
       };
 
-      const docRef = await addDoc(collection(db, "meetings"), newMeeting);
-
-      if (reminderEnabled) {
-        await scheduleLocalNotification({
-          ...newMeeting,
-          id: docRef.id,
-        } as Meeting);
+      if (editingId) {
+        const meetingToUpdate = meetings.find((m) => m.id === editingId);
+        if (meetingToUpdate && meetingToUpdate.notificationId) {
+          await cancelLocalNotification(meetingToUpdate.notificationId);
+        }
+        await updateDoc(doc(db, "meetings", editingId), newMeeting);
+        if (reminderEnabled) {
+          await scheduleLocalNotification({
+            ...newMeeting,
+            id: editingId,
+          } as Meeting);
+        }
+        alert("Meeting updated successfully.");
+      } else {
+        const docRef = await addDoc(collection(db, "meetings"), newMeeting);
+        if (reminderEnabled) {
+          await scheduleLocalNotification({
+            ...newMeeting,
+            id: docRef.id,
+          } as Meeting);
+        }
+        alert("Meeting scheduled successfully.");
       }
 
-      setClientName("");
-      setMeetingDate("");
-      setMeetingTime("");
-      setAgenda("");
-      setReminderEnabled(true);
-      setShowAddForm(false);
-      alert("Meeting scheduled successfully.");
+      resetForm();
     } catch (error) {
       console.error("Error adding meeting:", error);
       alert("Failed to add meeting.");
@@ -8165,17 +8196,17 @@ export function MeetingsView({
   const sortedMeetings = [...meetings].sort((a, b) => {
     const dateA = new Date(`${a.meetingDate}T${a.meetingTime}`).getTime();
     const dateB = new Date(`${b.meetingDate}T${b.meetingTime}`).getTime();
-    return dateA - dateB;
+    return dateB - dateA;
   });
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-4 pb-20">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 mb-2">
           <button onClick={onBack} className="p-1">
             <ArrowLeft className="w-5 h-5 cursor-pointer" />
           </button>
-          <h2 className="text-xl font-bold border-b-2 border-[#0D47A1] inline-block pb-1 text-[#0D47A1]">
+          <h2 className="text-lg font-bold border-b-2 border-[#0D47A1] inline-block pb-1 text-[#0D47A1]">
             Client Meetings
           </h2>
         </div>
@@ -8183,9 +8214,9 @@ export function MeetingsView({
         {isAdmin && !showAddForm && (
           <button
             onClick={() => setShowAddForm(true)}
-            className="flex items-center gap-2 bg-[#0D47A1] text-white px-4 py-2 rounded-xl font-bold hover:bg-[#1565C0] transition-colors cursor-pointer shadow-md"
+            className="flex items-center gap-1 bg-[#0D47A1] text-white px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-[#1565C0] transition-colors cursor-pointer shadow-md"
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="w-4 h-4" />
             New Meeting
           </button>
         )}
@@ -8197,19 +8228,19 @@ export function MeetingsView({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden mb-6"
+            className="overflow-hidden mb-4"
           >
             <form
               onSubmit={handleSubmit}
-              className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200"
+              className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200"
             >
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-lg text-slate-800">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="font-bold text-base text-slate-800">
                   Schedule New Meeting
                 </h3>
                 <button
                   type="button"
-                  onClick={() => setShowAddForm(false)}
+                  onClick={resetForm}
                   className="p-1 hover:bg-slate-100 rounded-lg cursor-pointer"
                 >
                   <X className="w-5 h-5 text-slate-500" />
@@ -8313,14 +8344,14 @@ export function MeetingsView({
         )}
       </AnimatePresence>
 
-      <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {sortedMeetings.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center shadow-sm">
-            <CalendarClock className="w-16 h-16 text-slate-200 mx-auto mb-4" />
-            <h3 className="text-lg font-bold text-slate-700 mb-1">
+          <div className="col-span-full bg-white rounded-2xl p-6 border border-slate-200 text-center shadow-sm">
+            <CalendarClock className="w-10 h-10 text-slate-200 mx-auto mb-2" />
+            <h3 className="text-base font-bold text-slate-700 mb-1">
               No Upcoming Meetings
             </h3>
-            <p className="text-slate-500 text-sm">
+            <p className="text-slate-500 text-xs">
               You haven't scheduled any client meetings yet.
             </p>
           </div>
@@ -8334,52 +8365,52 @@ export function MeetingsView({
             return (
               <div
                 key={meeting.id}
-                className={`bg-white rounded-2xl p-5 border shadow-sm transition-all flex flex-col sm:flex-row gap-4 ${isPast ? "border-slate-200 opacity-60" : "border-fuchsia-100 hover:shadow-md"}`}
+                className={`bg-white rounded-xl p-3 border shadow-sm transition-all flex flex-col sm:flex-row gap-3 ${isPast ? "border-slate-200 opacity-60" : "border-fuchsia-100 hover:shadow-md"}`}
               >
-                <div className="flex-1 flex gap-4">
+                <div className="flex-1 flex gap-3 min-w-0">
                   <div
-                    className={`w-14 h-14 rounded-xl flex flex-col items-center justify-center shrink-0 ${isPast ? "bg-slate-100 text-slate-500" : "bg-fuchsia-50 text-fuchsia-700"}`}
+                    className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center shrink-0 ${isPast ? "bg-slate-100 text-slate-500" : "bg-fuchsia-50 text-fuchsia-700"}`}
                   >
-                    <span className="text-xs font-bold uppercase">
+                    <span className="text-[10px] font-bold uppercase tracking-wider">
                       {meetingDateTime.toLocaleString("default", {
                         month: "short",
                       })}
                     </span>
-                    <span className="text-xl font-black leading-tight">
+                    <span className="text-lg font-black leading-tight">
                       {meetingDateTime.getDate()}
                     </span>
                   </div>
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <h3
-                      className={`font-bold text-lg ${isPast ? "text-slate-600" : "text-slate-800"}`}
+                      className={`font-bold text-base truncate ${isPast ? "text-slate-600" : "text-slate-800"}`}
                     >
                       {meeting.clientName}
                     </h3>
-                    <div className="flex flex-wrap items-center gap-3 mt-1 mb-2">
-                      <span className="flex items-center gap-1 auto text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md">
-                        <Clock className="w-3.5 h-3.5" />
+                    <div className="flex flex-wrap items-center gap-2 mt-0.5 mb-1.5">
+                      <span className="flex items-center gap-1 auto text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                        <Clock className="w-3 h-3" />
                         {meetingDateTime.toLocaleTimeString([], {
                           hour: "2-digit",
                           minute: "2-digit",
                         })}
                       </span>
                       {meeting.reminderEnabled && !isPast && (
-                        <span className="flex items-center gap-1 text-xs font-semibold text-fuchsia-600 bg-fuchsia-50 px-2.5 py-1 rounded-md">
-                          <BellRing className="w-3.5 h-3.5" />
+                        <span className="flex items-center gap-1 text-[10px] font-semibold text-fuchsia-600 bg-fuchsia-50 px-2 py-0.5 rounded">
+                          <BellRing className="w-3 h-3" />
                           Reminder Set
                         </span>
                       )}
                       {isPast && (
-                        <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-md">
+                        <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
                           Completed
                         </span>
                       )}
                     </div>
-                    <p className="text-sm border-l-2 border-slate-200 pl-3 py-1 text-slate-600 mt-2 bg-slate-50 rounded-r-lg">
+                    <p className="text-xs border-l-2 border-slate-200 pl-2 py-0.5 text-slate-600 bg-slate-50 rounded-r line-clamp-2">
                       {meeting.agenda}
                     </p>
                     {isSuperAdmin && meeting.createdByEmail && (
-                      <p className="text-[10px] font-bold text-[#D32F2F] mt-2">
+                      <p className="text-[9px] font-bold text-[#D32F2F] mt-1">
                         Created by: {meeting.createdByEmail.split("@")[0]}
                       </p>
                     )}
@@ -8387,13 +8418,20 @@ export function MeetingsView({
                 </div>
 
                 {isAdmin && (
-                  <div className="flex items-start sm:items-center justify-end sm:border-l border-slate-100 sm:pl-4">
+                  <div className="flex items-start sm:items-center justify-end sm:border-l border-slate-100 sm:pl-3 gap-1 shrink-0">
+                    <button
+                      onClick={() => handleEdit(meeting)}
+                      className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                      title="Edit Meeting"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
                     <button
                       onClick={() => handleDelete(meeting)}
-                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                       title="Delete Meeting"
                     >
-                      <Trash2 className="w-5 h-5" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
