@@ -864,6 +864,71 @@ function AppContent() {
     };
   }, [payments, projectExpenses]);
 
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+
+  useEffect(() => {
+    // Version check to force update if needed
+    const CURRENT_VERSION = "2.1.3"; // Increment this to force a reload for all users
+    const savedVersion = localStorage.getItem("app_version");
+    
+    if (savedVersion && savedVersion !== CURRENT_VERSION) {
+      console.log("New version detected, clearing cache...");
+      if ("caches" in window) {
+        caches.keys().then(names => {
+          for (const name of names) caches.delete(name);
+        });
+      }
+      localStorage.setItem("app_version", CURRENT_VERSION);
+      setTimeout(() => window.location.reload(), 500);
+    } else if (!savedVersion) {
+      localStorage.setItem("app_version", CURRENT_VERSION);
+    }
+
+    // Check for Service Worker updates
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistration().then((reg) => {
+        if (reg) {
+          if (reg.waiting) {
+            setUpdateAvailable(true);
+          }
+          reg.addEventListener("updatefound", () => {
+            const newWorker = reg.installing;
+            if (newWorker) {
+              newWorker.addEventListener("statechange", () => {
+                if (
+                  newWorker.state === "installed" &&
+                  navigator.serviceWorker.controller
+                ) {
+                  setUpdateAvailable(true);
+                }
+              });
+            }
+          });
+        }
+      });
+    }
+
+    // Force Service Worker update check every hour
+    const checkUpdate = async () => {
+      if ("serviceWorker" in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.getRegistration();
+          if (registration) {
+            console.log("Checking for app updates...");
+            await registration.update();
+          }
+        } catch (err) {
+          console.error("SW update check failed:", err);
+        }
+      }
+    };
+
+    const interval = setInterval(checkUpdate, 1000 * 60 * 60); // 1 hour
+    checkUpdate(); // and on mount
+
+    return () => clearInterval(interval);
+  }, []);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4">
@@ -1876,6 +1941,26 @@ function AppContent() {
                   </div>
                 </div>
                 <button
+                  onClick={async () => {
+                    if (window.confirm("This will clear app cache and reload to get the latest update. Continue?")) {
+                      if ("caches" in window) {
+                        const names = await caches.keys();
+                        await Promise.all(names.map(name => caches.delete(name)));
+                      }
+                      if ("serviceWorker" in navigator) {
+                         const registrations = await navigator.serviceWorker.getRegistrations();
+                         await Promise.all(registrations.map(r => r.unregister()));
+                      }
+                      localStorage.clear();
+                      window.location.reload();
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl bg-blue-50 text-[#0D47A1] font-bold text-[10px] hover:bg-blue-100 transition-all mb-2"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  FORCE REFRESH / UPDATE
+                </button>
+                <button
                   onClick={logout}
                   className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 hover:text-rose-600 hover:border-rose-200 transition-all active:scale-[0.98] cursor-pointer"
                 >
@@ -1902,6 +1987,26 @@ function AppContent() {
               ? "WORK SCHEDULE"
               : "Altasmim Engineering"}
           </h1>
+          {updateAvailable && (
+            <button
+              onClick={() => {
+                if ("serviceWorker" in navigator) {
+                  navigator.serviceWorker.getRegistration().then((reg) => {
+                    if (reg && reg.waiting) {
+                      reg.waiting.postMessage({ type: "SKIP_WAITING" });
+                    } else {
+                      window.location.reload();
+                    }
+                  });
+                } else {
+                  window.location.reload();
+                }
+              }}
+              className="ml-2 px-2 py-1 bg-red-600 text-white text-[9px] font-black rounded-full animate-bounce shadow-lg flex items-center gap-1"
+            >
+              <RefreshCw className="w-2.5 h-2.5" /> UPDATE
+            </button>
+          )}
         </div>
       </header>
 
@@ -3527,29 +3632,29 @@ function ProjectListView({
     }));
   };
 
-  const handleDeletePhotoFromGallery = async (projectId: string, photoId: string) => {
+  const handleDeletePhotoFromGallery = async (projectId: string, photoId: string, photoUrl?: string) => {
     if (!window.confirm("Are you sure you want to delete this photo?")) return;
     
     try {
-      console.log("Attempting to delete photo:", { projectId, photoId });
       const project = projects.find(p => p.id === projectId);
       if (!project) {
-        console.error("Project not found in state:", projectId);
         alert("Project not found.");
         return;
       }
       
-      const updatedPhotos = (project.photos || []).filter(p => p.id !== photoId);
-      console.log("Updated photos list (count):", updatedPhotos.length);
+      // Filter out by ID, but fallback to URL if ID doesn't match/exist for older data
+      const updatedPhotos = (project.photos || []).filter(p => {
+        if (p.id && p.id === photoId) return false;
+        if (photoUrl && p.url === photoUrl) return false;
+        return true;
+      });
       
       const docRef = doc(db, "project_list", projectId);
       await updateDoc(docRef, {
         photos: updatedPhotos
       });
       
-      console.log("Firestore update successful.");
-      
-      // Update local viewing gallery state to reflect changes instantly if onSnapshot is slow
+      // Update local viewing gallery state to reflect changes instantly
       if (viewingGallery) {
         const remainingTypePhotos = updatedPhotos.filter(p => p.type === viewingGallery.type);
         if (remainingTypePhotos.length === 0) {
@@ -3565,8 +3670,6 @@ function ProjectListView({
       if (viewingPhoto) {
         setViewingPhoto(null);
       }
-      
-      alert("Photo deleted successfully.");
       
     } catch (error: any) {
       console.error("Failed to delete photo:", error);
@@ -4013,7 +4116,7 @@ function ProjectListView({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeletePhotoFromGallery(viewingGallery.projectId, photo.id);
+                          handleDeletePhotoFromGallery(viewingGallery.projectId, photo.id, photo.url);
                         }}
                         className="p-1.5 bg-red-500/80 backdrop-blur-md rounded-lg text-white hover:bg-red-600 transition-colors"
                       >
@@ -4042,10 +4145,10 @@ function ProjectListView({
                {isAdmin && viewingGallery && (
                 <button
                   onClick={async () => {
-                    // Find the photo ID from the viewing gallery
+                    // Find the photo from the viewing gallery
                     const photo = viewingGallery.photos?.find(p => p.url === viewingPhoto.url);
                     if (photo) {
-                      await handleDeletePhotoFromGallery(viewingGallery.projectId, photo.id);
+                      await handleDeletePhotoFromGallery(viewingGallery.projectId, photo.id, photo.url);
                     }
                   }}
                   className="p-2 bg-red-500/20 text-red-500 rounded-full hover:bg-red-500 hover:text-white transition-all"
@@ -5590,6 +5693,29 @@ function AboutView({
   );
 }
 
+  const getManpowerColor = (name: string) => {
+    const colors = [
+      "#0D47A1", // Blue
+      "#C62828", // Red
+      "#2E7D32", // Green
+      "#6A1B9A", // Purple
+      "#F57C00", // Orange
+      "#1565C0", // Light Blue
+      "#AD1457", // Pink
+      "#4527A0", // Deep Purple
+      "#00838F", // Cyan
+      "#00695C", // Teal
+      "#37474F", // Blue Gray
+      "#D84315", // Deep Orange
+    ];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const index = Math.abs(hash) % colors.length;
+    return colors[index];
+  };
+
 function TomorrowWorkView({
   rows,
   setRows,
@@ -5965,7 +6091,12 @@ function TomorrowWorkView({
                       {row.manpowerList.map((name, mIndex) => (
                         <div
                           key={mIndex}
-                          className="flex items-center gap-0.5 bg-[#E3F2FD] text-[#0D47A1] px-1 py-0.5 rounded-full text-[8px] font-bold whitespace-nowrap overflow-hidden text-ellipsis max-w-full"
+                          style={{
+                            backgroundColor: getManpowerColor(name) + "15",
+                            color: getManpowerColor(name),
+                            borderColor: getManpowerColor(name) + "30",
+                          }}
+                          className="flex items-center gap-0.5 px-1 py-0.5 rounded-full text-[8px] font-bold whitespace-nowrap overflow-hidden text-ellipsis max-w-full border"
                         >
                           <span>
                             {mIndex + 1}.{name}
@@ -6273,7 +6404,12 @@ function TomorrowWorkDetailsView({
                         row.manpowerList.map((name, mIndex) => (
                           <span
                             key={mIndex}
-                            className="bg-[#E3F2FD] text-[#0D47A1] px-1.5 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap"
+                            style={{
+                              backgroundColor: getManpowerColor(name) + "15",
+                              color: getManpowerColor(name),
+                              borderColor: getManpowerColor(name) + "30",
+                            }}
+                            className="px-1.5 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap border"
                           >
                             {mIndex + 1}. {name}
                           </span>
@@ -6878,9 +7014,9 @@ const generateBillPDF = async (
     .replace(/\s+/g, "_")
     .toLowerCase();
   const sanitizedProject = bill.site.replace(/\s+/g, "_").toLowerCase();
-  const sanitizedClient = (bill.recipientName || "client").replace(/\s+/g, "_").toLowerCase();
   const dateStr = new Date().toISOString().split("T")[0];
-  const fileName = `${companyPrefix}_${bill.type}_${bill.billNumber}_${sanitizedClient}_${sanitizedProject}_${dateStr}.pdf`;
+  // Updated format: [date]_[type]_of_[project]_[billNumber].pdf
+  const fileName = `${dateStr}_${bill.type.toLowerCase()}_of_${sanitizedProject}_${bill.billNumber}.pdf`;
   const isCapacitor = (window as any).Capacitor?.isNativePlatform();
 
   if (action === "bloburl") {
