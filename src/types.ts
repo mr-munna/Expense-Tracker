@@ -134,6 +134,13 @@ export interface ProjectListEntry {
   startDate: string;
   status: 'Ongoing' | 'Struk' | 'Upcoming' | 'Finished' | 'Handover';
   completeDate: string;
+  photos?: Array<{
+    id: string;
+    url: string;
+    title: string;
+    type: 'Work Order' | 'Money Receipt' | 'Collect Bill' | 'Other';
+    timestamp: number;
+  }>;
 }
 
 export type View = 'DASHBOARD' | 'PAYMENT_HISTORY' | 'PROJECT_SUMMARY' | 'REVENUE' | 'ADD_DATA' | 'EMPLOYEE_TOTALS' | 'EXPORT' | 'ABOUT' | 'CLOUD_SYNC' | 'CONTACT_INFO' | 'TOMORROW_WORK' | 'TOMORROW_WORK_HISTORY' | 'TOMORROW_WORK_DETAILS' | 'BILL' | 'QUOTATION' | 'BILL_HISTORY' | 'PDF_SETTINGS' | 'USERS' | 'PROJECT_LIST' | 'MEETINGS';

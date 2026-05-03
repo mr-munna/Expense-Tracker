@@ -31,6 +31,7 @@ import {
   Globe,
   Eye,
   Check,
+  Maximize2,
   PieChart as PieChartIcon,
   Receipt,
   FileText,
@@ -50,6 +51,8 @@ import {
   BellRing,
   Clock,
   Pencil,
+  Image as ImageIcon,
+  Camera,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { jsPDF } from "jspdf";
@@ -121,10 +124,42 @@ const formatCurrency = (amount: number) => {
   return `Tk. ${amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
+import { toJpeg } from "html-to-image";
+
+const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quality = 0.7): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height *= maxWidth / width;
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width *= maxHeight / height;
+          height = maxHeight;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx?.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+  });
+};
+
 const generateId = () => {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     try {
-      return generateId();
+      return crypto.randomUUID();
     } catch (e) {}
   }
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
@@ -348,8 +383,13 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     user?.email === "bijoymahmudmunna@gmail.com";
   const isAdmin =
     isApproved &&
-    (profile?.role === "admin" || profile?.role === "super_admin");
-  const isSuperAdmin = isApproved && profile?.role === "super_admin";
+    (profile?.role === "admin" ||
+      profile?.role === "super_admin" ||
+      user?.email === "bijoymahmudmunna@gmail.com");
+  const isSuperAdmin =
+    isApproved &&
+    (profile?.role === "super_admin" ||
+      user?.email === "bijoymahmudmunna@gmail.com");
   const isMember = isApproved && !!profile;
 
   const hasPermission = (module: PermissionModule, level: "view" | "edit") => {
@@ -451,6 +491,12 @@ function handleFirestoreError(
     path,
   };
   console.error("Firestore Error: ", JSON.stringify(errInfo));
+  const msg = error instanceof Error ? error.message : String(error);
+  if (msg.toLowerCase().includes("permission") || msg.toLowerCase().includes("insufficient")) {
+      alert("Permission Denied: You do not have authority to perform this action.");
+  } else {
+      alert("Error: " + msg);
+  }
   throw new Error(JSON.stringify(errInfo));
 }
 
@@ -493,7 +539,16 @@ function AppContent() {
   });
   const [currentTomorrowWorkRows, setCurrentTomorrowWorkRows] = useState<
     TomorrowWorkRow[]
-  >([]);
+  >([
+    {
+      id: generateId(),
+      projectName: "",
+      projectAddress: "",
+      workDescription: "",
+      manpowerList: [],
+      overtime: "",
+    },
+  ]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [quotations, setQuotations] = useState<Bill[]>([]);
   const [collectedBills, setCollectedBills] = useState<CollectedBill[]>([]);
@@ -706,20 +761,11 @@ function AppContent() {
   // Load current rows when date changes
   useEffect(() => {
     const saved = tomorrowWorkData[tomorrowWorkDate];
-    if (saved) {
+    if (saved && saved.length > 0) {
       setCurrentTomorrowWorkRows(saved);
-    } else {
-      setCurrentTomorrowWorkRows([
-        {
-          id: generateId(),
-          projectName: "",
-          projectAddress: "",
-          workDescription: "",
-          manpowerList: [],
-          overtime: "",
-        },
-      ]);
     }
+    // If no saved data, we KEEP the current rows.
+    // This allows users to change the date without losing their work.
   }, [tomorrowWorkDate, tomorrowWorkData]);
 
   // Sync suggestions with tomorrowWorkData (history)
@@ -1146,6 +1192,7 @@ function AppContent() {
           <ProjectListView
             projects={projectList}
             isAdmin={isAdmin}
+            isSuperAdmin={isSuperAdmin}
             onBack={() => setCurrentView("DASHBOARD")}
           />
         );
@@ -3217,11 +3264,6 @@ function PaymentHistoryView({
                     )}
                     <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate">
                       {p.timestamp.split(",")[0]}
-                      {isSuperAdmin && p.createdByEmail && (
-                        <div className="text-[8px] text-[#D32F2F] font-bold leading-tight mt-0.5">
-                          {p.createdByEmail.split("@")[0]}
-                        </div>
-                      )}
                     </td>
                     <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate">
                       {p.employeeName}
@@ -3327,11 +3369,6 @@ function PaymentHistoryView({
                     )}
                     <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate">
                       {pe.timestamp.split(",")[0]}
-                      {isSuperAdmin && pe.createdByEmail && (
-                        <div className="text-[8px] text-[#D32F2F] font-bold leading-tight mt-0.5">
-                          {pe.createdByEmail.split("@")[0]}
-                        </div>
-                      )}
                     </td>
                     <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate">
                       {pe.projectName}
@@ -3393,15 +3430,26 @@ function PaymentHistoryView({
 function ProjectListView({
   projects,
   isAdmin,
+  isSuperAdmin,
   onBack,
 }: {
   projects: ProjectListEntry[];
   isAdmin: boolean;
+  isSuperAdmin: boolean;
   onBack: () => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState<Partial<ProjectListEntry>>({});
+  const [viewingPhoto, setViewingPhoto] = useState<{
+    url: string;
+    title: string;
+  } | null>(null);
+  const [viewingGallery, setViewingGallery] = useState<{
+    type: string;
+    photos: ProjectListEntry["photos"];
+    projectId: string;
+  } | null>(null);
 
   const handleEdit = (project: ProjectListEntry) => {
     setEditingId(project.id);
@@ -3431,10 +3479,98 @@ function ProjectListView({
     if (window.confirm("Are you sure you want to delete this project?")) {
       try {
         await deleteDoc(doc(db, "project_list", id));
-      } catch (error) {
+      } catch (error: any) {
         console.error("Failed to delete project:", error);
-        alert("Failed to delete project.");
+        handleFirestoreError(error, OperationType.DELETE, `project_list/${id}`);
       }
+    }
+  };
+
+  const handleFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    type: ProjectListEntry["photos"][number]["type"],
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Use a higher limit but compress it
+    if (file.size > 5000000) {
+      alert("File is too large! Please upload a photo smaller than 5MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64 = reader.result as string;
+      const compressed = await compressImage(base64);
+      
+      const newPhoto = {
+        id: generateId(),
+        url: compressed,
+        title: type,
+        type,
+        timestamp: Date.now(),
+      };
+
+      setForm((prev) => ({
+        ...prev,
+        photos: [...(prev.photos || []), newPhoto],
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removePhoto = (id: string) => {
+    setForm((prev) => ({
+      ...prev,
+      photos: (prev.photos || []).filter((p) => p.id !== id),
+    }));
+  };
+
+  const handleDeletePhotoFromGallery = async (projectId: string, photoId: string) => {
+    if (!window.confirm("Are you sure you want to delete this photo?")) return;
+    
+    try {
+      console.log("Attempting to delete photo:", { projectId, photoId });
+      const project = projects.find(p => p.id === projectId);
+      if (!project) {
+        console.error("Project not found in state:", projectId);
+        alert("Project not found.");
+        return;
+      }
+      
+      const updatedPhotos = (project.photos || []).filter(p => p.id !== photoId);
+      console.log("Updated photos list (count):", updatedPhotos.length);
+      
+      const docRef = doc(db, "project_list", projectId);
+      await updateDoc(docRef, {
+        photos: updatedPhotos
+      });
+      
+      console.log("Firestore update successful.");
+      
+      // Update local viewing gallery state to reflect changes instantly if onSnapshot is slow
+      if (viewingGallery) {
+        const remainingTypePhotos = updatedPhotos.filter(p => p.type === viewingGallery.type);
+        if (remainingTypePhotos.length === 0) {
+          setViewingGallery(null);
+        } else {
+          setViewingGallery({
+            ...viewingGallery,
+            photos: remainingTypePhotos
+          });
+        }
+      }
+
+      if (viewingPhoto) {
+        setViewingPhoto(null);
+      }
+      
+      alert("Photo deleted successfully.");
+      
+    } catch (error: any) {
+      console.error("Failed to delete photo:", error);
+      handleFirestoreError(error, OperationType.UPDATE, `project_list/${projectId}`);
     }
   };
 
@@ -3499,34 +3635,89 @@ function ProjectListView({
                 </span>
               </div>
 
-              <div className="space-y-2 text-sm pl-2">
+              <div className="space-y-2 text-sm pl-2 mb-4">
                 <div className="flex justify-between text-[#455A64]">
-                  <span className="font-semibold text-xs">Started:</span>
+                  <span className="font-semibold text-xs text-slate-500">
+                    Started:
+                  </span>
                   <span className="font-mono text-xs">
                     {project.startDate || "N/A"}
                   </span>
                 </div>
                 <div className="flex justify-between text-[#455A64]">
-                  <span className="font-semibold text-xs">Completion:</span>
+                  <span className="font-semibold text-xs text-slate-500">
+                    Completion:
+                  </span>
                   <span className="font-mono text-xs">
                     {project.completeDate || "N/A"}
                   </span>
                 </div>
               </div>
 
+              {/* Photo Display Section */}
+              {(isAdmin || isSuperAdmin) && (
+                <div className="mt-auto pt-4 border-t border-slate-100 grid grid-cols-3 gap-2">
+                  {[
+                    { type: "Work Order", label: "Work Order", color: "blue" },
+                    { type: "Money Receipt", label: "Receipt", color: "green" },
+                    { type: "Collect Bill", label: "Collect Bill", color: "orange" },
+                  ].map((cat) => {
+                    const catPhotos = (project.photos || []).filter(
+                      (p) => p.type === cat.type
+                    );
+                    const hasPhotos = catPhotos.length > 0;
+
+                    return (
+                      <button
+                        key={cat.type}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (hasPhotos) {
+                            setViewingGallery({
+                              type: cat.type,
+                              photos: catPhotos,
+                              projectId: project.id,
+                            });
+                          }
+                        }}
+                        className={`group relative flex flex-col items-center justify-center p-2 rounded-xl border-2 border-dashed transition-all ${
+                          hasPhotos
+                            ? `bg-${cat.color}-50 border-${cat.color}-200 text-${cat.color}-600 hover:bg-${cat.color}-100 cursor-pointer`
+                            : "bg-slate-50 border-slate-200 text-slate-300 opacity-60 grayscale cursor-not-allowed"
+                        }`}
+                      >
+                        <div className="relative">
+                          <ImageIcon className="w-5 h-5 mb-1" />
+                          {hasPhotos && (
+                            <span className={`absolute -top-3 -right-3 w-5 h-5 flex items-center justify-center bg-${cat.color}-600 text-white text-[10px] font-black rounded-full shadow-sm ring-2 ring-white animate-in zoom-in`}>
+                              {catPhotos.length}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-center line-clamp-1 w-full">
+                          {cat.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {isAdmin && (
-                <div className="absolute top-2 right-2 flex gap-1 bg-white/80 p-1 rounded-lg backdrop-blur-sm shadow-sm opacity-100 z-10">
+                <div className="pt-3 mt-3 border-t border-slate-100 flex justify-end gap-2">
                   <button
                     onClick={() => handleEdit(project)}
-                    className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded transition-colors cursor-pointer"
                   >
-                    <Edit2 className="w-4 h-4" />
+                    <Edit2 className="w-3 h-3" />
+                    Edit
                   </button>
                   <button
                     onClick={() => handleDelete(project.id)}
-                    className="p-1 text-red-600 hover:bg-red-50 rounded cursor-pointer"
+                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded cursor-pointer"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3 h-3" />
+                    Delete
                   </button>
                 </div>
               )}
@@ -3535,17 +3726,50 @@ function ProjectListView({
         )}
       </div>
 
+      {/* Image Viewer Overlay */}
+      <AnimatePresence>
+        {viewingPhoto && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/90 flex flex-col items-center justify-center p-4"
+          >
+            <div className="absolute top-4 right-4">
+              <button
+                onClick={() => setViewingPhoto(null)}
+                className="p-2 bg-white/10 text-white rounded-full hover:bg-white/20 transition-all cursor-pointer"
+              >
+                <X className="w-8 h-8" />
+              </button>
+            </div>
+            <div className="w-full max-w-4xl h-full flex flex-col items-center justify-center pointer-events-none text-sans">
+              <h3 className="text-white font-bold text-lg mb-4 drop-shadow-md">
+                {viewingPhoto.title}
+              </h3>
+              <div className="relative group max-w-full max-h-[80vh] pointer-events-auto">
+                <img
+                  src={viewingPhoto.url}
+                  alt={viewingPhoto.title}
+                  className="max-w-full max-h-full object-contain rounded-lg shadow-2xl border border-white/10"
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {isAdmin && (
         <>
           <div className="fixed bottom-32 right-6 z-50">
             <button
               onClick={() => setShowAddForm(!showAddForm)}
-              className="bg-[#0D47A1] text-white p-3 rounded-full shadow-2xl hover:bg-[#1565C0] transition-all active:scale-95 group flex items-center gap-2 px-5 cursor-pointer"
+              className="bg-[#0D47A1] text-white p-3 rounded-full shadow-2xl hover:bg-[#1565C0] transition-all active:scale-95 group flex items-center gap-2 px-5 cursor-pointer font-sans"
             >
               <Plus
                 className={`w-5 h-5 transition-transform ${showAddForm ? "rotate-45" : ""}`}
               />
-              <span className="font-bold text-sm">Add Project</span>
+              <span className="font-bold text-sm tracking-wide">Add Project</span>
             </button>
           </div>
 
@@ -3557,9 +3781,9 @@ function ProjectListView({
                 exit={{ opacity: 0, y: 100 }}
                 className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4 bg-black/20 backdrop-blur-sm"
               >
-                <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+                <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
                   <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-                    <h3 className="font-bold text-[#0D47A1]">
+                    <h3 className="font-bold text-[#0D47A1] font-sans">
                       {editingId ? "Edit Project" : "Add New Project"}
                     </h3>
                     <button
@@ -3568,15 +3792,15 @@ function ProjectListView({
                         setEditingId(null);
                         setForm({});
                       }}
-                      className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                      className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded-full hover:bg-slate-200 transition-colors"
                     >
                       <X className="w-5 h-5" />
                     </button>
                   </div>
-                  <div className="p-6 space-y-4">
+                  <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar">
                     <div className="grid grid-cols-1 gap-4 text-left">
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-[#78909C] uppercase">
+                        <label className="text-[10px] font-bold text-[#78909C] uppercase tracking-wider">
                           Project Name
                         </label>
                         <input
@@ -3591,7 +3815,7 @@ function ProjectListView({
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-[#78909C] uppercase">
+                          <label className="text-[10px] font-bold text-[#78909C] uppercase tracking-wider">
                             Starting Date
                           </label>
                           <input
@@ -3604,7 +3828,7 @@ function ProjectListView({
                           />
                         </div>
                         <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-[#78909C] uppercase">
+                          <label className="text-[10px] font-bold text-[#78909C] uppercase tracking-wider">
                             Complete Date
                           </label>
                           <input
@@ -3618,7 +3842,7 @@ function ProjectListView({
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-[#78909C] uppercase">
+                        <label className="text-[10px] font-bold text-[#78909C] uppercase tracking-wider">
                           Status
                         </label>
                         <select
@@ -3630,7 +3854,7 @@ function ProjectListView({
                                 .value as ProjectListEntry["status"],
                             })
                           }
-                          className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition-all outline-none font-bold text-blue-600"
+                          className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition-all outline-none font-bold text-blue-600 cursor-pointer appearance-none"
                         >
                           <option value="Ongoing">Ongoing</option>
                           <option value="Struk">Struk</option>
@@ -3639,24 +3863,112 @@ function ProjectListView({
                           <option value="Handover">Handover</option>
                         </select>
                       </div>
+
+                      {(isAdmin || isSuperAdmin) && (
+                        <div className="space-y-4 pt-2">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-1">
+                            Attachments (Max 10 Photos)
+                          </p>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <label className="flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 cursor-pointer hover:bg-slate-100 transition-all group overflow-hidden">
+                              <Camera className="w-6 h-6 text-slate-400 group-hover:text-blue-500 transition-colors" />
+                              <div className="text-center">
+                                <p className="text-[10px] font-bold text-slate-600">Work Order</p>
+                                <p className="text-[8px] text-slate-400">Click to upload</p>
+                              </div>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => handleFileChange(e, "Work Order")}
+                              />
+                            </label>
+                            
+                            <label className="flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 cursor-pointer hover:bg-slate-100 transition-all group overflow-hidden">
+                              <Camera className="w-6 h-6 text-slate-400 group-hover:text-green-500 transition-colors" />
+                              <div className="text-center">
+                                <p className="text-[10px] font-bold text-slate-600">Money Receipt</p>
+                                <p className="text-[8px] text-slate-400">Click to upload</p>
+                              </div>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => handleFileChange(e, "Money Receipt")}
+                              />
+                            </label>
+
+                            <label className="flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 cursor-pointer hover:bg-slate-100 transition-all group overflow-hidden">
+                              <Camera className="w-6 h-6 text-slate-400 group-hover:text-orange-500 transition-colors" />
+                              <div className="text-center">
+                                <p className="text-[10px] font-bold text-slate-600">Collect Bill</p>
+                                <p className="text-[8px] text-slate-400">Click to upload</p>
+                              </div>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => handleFileChange(e, "Collect Bill")}
+                              />
+                            </label>
+
+                            <label className="flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 cursor-pointer hover:bg-slate-100 transition-all group overflow-hidden">
+                              <Camera className="w-6 h-6 text-slate-400 group-hover:text-purple-500 transition-colors" />
+                              <div className="text-center">
+                                <p className="text-[10px] font-bold text-slate-600">Other Photo</p>
+                                <p className="text-[8px] text-slate-400">Click to upload</p>
+                              </div>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => handleFileChange(e, "Other")}
+                              />
+                            </label>
+                          </div>
+
+                          {form.photos && form.photos.length > 0 && (
+                            <div className="space-y-2">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Selected Photos ({form.photos.length})</p>
+                              <div className="grid grid-cols-4 gap-2">
+                                {form.photos.map((photo) => (
+                                  <div key={photo.id} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 group">
+                                    <img src={photo.url} alt={photo.title} className="w-full h-full object-cover" />
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1">
+                                      <span className="text-[8px] text-white font-bold truncate w-full text-center px-1">{photo.title}</span>
+                                      <button 
+                                        onClick={() => removePhoto(photo.id)}
+                                        className="p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex justify-end gap-3 pt-4">
+                    <div className="flex justify-end gap-3 pt-6 pb-2">
                       <button
                         onClick={() => {
                           setShowAddForm(false);
                           setEditingId(null);
                           setForm({});
                         }}
-                        className="px-6 py-2.5 font-bold text-slate-500 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                        className="px-6 py-2.5 font-bold text-slate-500 hover:bg-slate-100 rounded-xl transition-all cursor-pointer font-sans"
                       >
                         Cancel
                       </button>
                       <button
                         onClick={handleSave}
                         disabled={!form.projectName}
-                        className="px-8 py-2.5 font-bold text-white bg-[#0D47A1] rounded-xl shadow-lg border border-blue-700 disabled:opacity-50 hover:bg-[#1565C0] transition-all transform active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+                        className="px-8 py-2.5 bg-[#0D47A1] text-white font-bold rounded-xl shadow-lg border border-blue-700 disabled:opacity-50 hover:bg-[#1565C0] transition-all transform active:scale-95 cursor-pointer disabled:cursor-not-allowed font-sans tracking-wide"
                       >
-                        {editingId ? "Update" : "Add"} Project
+                        {editingId ? "Update Project" : "Save Project"}
                       </button>
                     </div>
                   </div>
@@ -3665,6 +3977,111 @@ function ProjectListView({
             )}
           </AnimatePresence>
         </>
+      )}
+
+      {/* Modals */}
+      {viewingGallery && (
+        <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col pt-safe animate-in fade-in">
+          <div className="p-4 flex items-center justify-between border-b border-white/10 bg-slate-900/50 backdrop-blur-md">
+            <div>
+              <h3 className="text-white font-black text-lg">{viewingGallery.type}</h3>
+              <p className="text-slate-400 text-xs">{viewingGallery.photos?.length} Photos Found</p>
+            </div>
+            <button
+              onClick={() => setViewingGallery(null)}
+              className="p-2 bg-white/10 text-white rounded-full hover:bg-white/20 transition-all active:scale-90"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 content-start">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 pb-20">
+              {viewingGallery.photos?.map((photo) => (
+                <div 
+                  key={photo.id}
+                  className="group relative aspect-square bg-slate-800 rounded-2xl overflow-hidden shadow-2xl border border-white/5 cursor-pointer transform transition-all active:scale-95"
+                  onClick={() => setViewingPhoto({ url: photo.url, title: photo.title })}
+                >
+                  <img src={photo.url} alt={photo.title} className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
+                    <p className="text-white text-[10px] font-bold truncate">{photo.title}</p>
+                  </div>
+                  
+                  {/* Action Buttons */}
+                  <div className="absolute top-2 right-2 flex gap-2">
+                    {isAdmin && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeletePhotoFromGallery(viewingGallery.projectId, photo.id);
+                        }}
+                        className="p-1.5 bg-red-500/80 backdrop-blur-md rounded-lg text-white hover:bg-red-600 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                    <div className="p-1.5 bg-black/40 backdrop-blur-md rounded-lg text-white">
+                      <Maximize2 className="w-4 h-4" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewingPhoto && (
+        <div className="fixed inset-0 z-[110] bg-black flex flex-col animate-in zoom-in duration-200">
+           <div className="p-4 flex items-center justify-between bg-black/40 backdrop-blur-md absolute top-0 left-0 right-0 z-10">
+            <div>
+              <h3 className="text-white font-bold">{viewingPhoto.title}</h3>
+              <p className="text-white/50 text-[10px]">Tap background or close to return</p>
+            </div>
+            <div className="flex gap-2">
+               {isAdmin && viewingGallery && (
+                <button
+                  onClick={async () => {
+                    // Find the photo ID from the viewing gallery
+                    const photo = viewingGallery.photos?.find(p => p.url === viewingPhoto.url);
+                    if (photo) {
+                      await handleDeletePhotoFromGallery(viewingGallery.projectId, photo.id);
+                    }
+                  }}
+                  className="p-2 bg-red-500/20 text-red-500 rounded-full hover:bg-red-500 hover:text-white transition-all"
+                  title="Delete Photo"
+                >
+                  <Trash2 className="w-6 h-6" />
+                </button>
+              )}
+              <button
+                onClick={() => setViewingPhoto(null)}
+                className="p-2 bg-white/10 text-white rounded-full hover:bg-white/20"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 flex items-center justify-center p-4" onClick={(e) => {
+            if (e.target === e.currentTarget) setViewingPhoto(null);
+          }}>
+            <img
+              src={viewingPhoto.url}
+              alt={viewingPhoto.title}
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-in fade-in slide-in-from-bottom-5 pointer-events-none"
+            />
+          </div>
+          <div className="p-4 bg-black/40 backdrop-blur-md flex justify-center pb-safe gap-4">
+            <a
+              href={viewingPhoto.url}
+              download={`${viewingPhoto.title.replace(/\s+/g, '_')}.jpg`}
+              className="flex items-center gap-2 px-6 py-3 bg-white text-black rounded-2xl font-black text-sm shadow-xl active:scale-95 transition-all"
+            >
+              <Download className="w-5 h-5" />
+              Download
+            </a>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -4168,11 +4585,6 @@ function RevenueView({
                       </td>
                       <td className="p-2 border-r border-[#B0BEC5]/30 whitespace-nowrap">
                         {bill.date}
-                        {isSuperAdmin && bill.createdByEmail && (
-                          <div className="text-[10px] text-[#D32F2F] mt-0.5 font-bold">
-                            {bill.createdByEmail.split("@")[0]}
-                          </div>
-                        )}
                       </td>
                       <td className="p-2 border-r border-[#B0BEC5]/30 font-medium">
                         {bill.projectName}
@@ -4625,7 +5037,11 @@ function ExportView({
     addFooterToPDF(doc);
 
     // Handle PDF for Android/Capacitor
-    const fileName = `expense_report_${new Date().getTime()}.pdf`;
+    const companyPrefix = pdfSettings.companyName
+      .replace(/\s+/g, "_")
+      .toLowerCase();
+    const dateStr = new Date().toISOString().split("T")[0];
+    const fileName = `${companyPrefix}_expense_report_${dateStr}.pdf`;
     try {
       // Check if we are in a Capacitor environment
       const isCapacitor = (window as any).Capacitor?.isNativePlatform();
@@ -5316,7 +5732,7 @@ function TomorrowWorkView({
   );
 
   return (
-    <div className="space-y-2 pb-64">
+    <div className="space-y-2 pb-64 relative">
       <div className="flex items-center justify-between gap-3 mb-1">
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-bold border-b-2 border-[#ED7D31] inline-block pb-1 text-[#ED7D31]">
@@ -5336,14 +5752,17 @@ function TomorrowWorkView({
           >
             <History className="w-3 h-3" /> History
           </button>
-          <button
-            onClick={addRow}
-            className="px-3 py-1 text-xs font-bold text-white bg-[#0D47A1] rounded shadow-sm hover:bg-[#1565C0] transition-colors flex items-center gap-1"
-          >
-            <Plus className="w-3 h-3" /> Add Row
-          </button>
         </div>
       </div>
+
+      {/* Floating Add Row Button */}
+      <button
+        onClick={addRow}
+        className="fixed bottom-24 right-6 z-50 w-14 h-14 bg-[#0D47A1] text-white rounded-full shadow-2xl hover:bg-[#1565C0] flex items-center justify-center transition-all hover:scale-110 active:scale-95 border-4 border-white"
+        title="Add Row"
+      >
+        <Plus className="w-8 h-8" />
+      </button>
 
       {/* Date Field Row - Highlighted but no container border */}
       <div className="bg-[#E3F2FD] p-1.5 rounded-lg flex items-center justify-start gap-3">
@@ -5749,21 +6168,67 @@ function TomorrowWorkDetailsView({
   onBack: () => void;
   isSuperAdmin?: boolean;
 }) {
+  const tableRef = React.useRef<HTMLDivElement>(null);
+
+  const saveAsImage = async () => {
+    if (!tableRef.current) return;
+
+    try {
+      const dataUrl = await toJpeg(tableRef.current, {
+        quality: 0.95,
+        backgroundColor: "#ffffff",
+      });
+      const link = document.createElement("a");
+      link.download = `work_schedule_${date}.jpg`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error("Could not save image", err);
+      alert("Failed to save image. Please try again.");
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-white z-50 flex flex-col overflow-hidden">
-      <div className="p-4 border-b border-[#B0BEC5]/30 flex items-center gap-3 bg-white sticky top-0 z-10">
+      <div className="p-4 border-b border-[#B0BEC5]/30 flex items-center justify-between bg-white sticky top-0 z-10">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onBack}
+            className="p-2 hover:bg-[#F5F5F5] rounded-full transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="w-6 h-6 text-[#1A237E]" />
+          </button>
+          <h2 className="text-xl font-bold text-[#1A237E]">
+            Work Date - {date}
+          </h2>
+        </div>
         <button
-          onClick={onBack}
-          className="p-2 hover:bg-[#F5F5F5] rounded-full transition-colors cursor-pointer"
+          onClick={saveAsImage}
+          className="flex items-center gap-2 px-4 py-2 bg-[#2E7D32] text-white rounded-lg text-sm font-bold shadow-md hover:bg-[#1B5E20] transition-all active:scale-95 cursor-pointer"
         >
-          <ArrowLeft className="w-6 h-6 text-[#1A237E]" />
+          <Camera className="w-4 h-4" />
+          Save as JPG
         </button>
-        <h2 className="text-xl font-bold text-[#1A237E]">Work Date - {date}</h2>
       </div>
 
-      <div className="flex-1 overflow-auto p-2">
-        <div className="bg-white rounded-xl shadow-md border border-[#B0BEC5]/30 overflow-hidden">
-          <table className="w-full text-left border-collapse table-fixed">
+      <div className="flex-1 overflow-auto p-4 bg-slate-50">
+        <div
+          ref={tableRef}
+          className="bg-white p-4 rounded-xl shadow-md border border-[#B0BEC5]/30 overflow-hidden min-w-[800px]"
+        >
+          <div className="mb-4 flex justify-between items-end border-b pb-2">
+            <div>
+              <h1 className="text-2xl font-black text-[#1A237E]">Al-Tasmim</h1>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+                Interior Design & Consultant
+              </p>
+            </div>
+            <div className="text-right">
+              <h3 className="text-sm font-bold text-[#1A237E]">Work Schedule</h3>
+              <p className="text-xs text-slate-500">Date: {date}</p>
+            </div>
+          </div>
+          <table className="w-full text-left border-collapse table-fixed border border-[#B0BEC5]/30">
             <thead>
               <tr className="bg-[#F5F9FD] border-b border-[#B0BEC5]/30 text-[10px] font-bold text-[#455A64] uppercase tracking-wider">
                 <th className="p-2 border-r border-[#B0BEC5]/30 w-[6%] text-center">
@@ -5795,11 +6260,6 @@ function TomorrowWorkDetailsView({
                   </td>
                   <td className="p-2 border-r border-[#B0BEC5]/20 text-[11px] font-medium text-[#1A237E] break-words">
                     {row.projectName || "N/A"}
-                    {isSuperAdmin && row.createdByEmail && (
-                      <div className="text-[9px] text-[#D32F2F] mt-1 font-bold">
-                        {row.createdByEmail.split("@")[0]}
-                      </div>
-                    )}
                   </td>
                   <td className="p-2 border-r border-[#B0BEC5]/20 text-[11px] font-medium text-[#455A64] break-words">
                     {row.projectAddress || "N/A"}
@@ -6384,7 +6844,7 @@ const generateBillPDF = async (
   // Signature
   doc.setFontSize(10);
   doc.setTextColor(0, 0, 0);
-  // Center both "Best regards" and the name in the signature area (right side)
+  // Center "Best regards" in the signature area (right side)
   const signatureCenterX = 170;
   doc.setFont(settings.fontStyle, "normal");
   doc.text("Best regards", signatureCenterX, finalY + 20, { align: "center" });
@@ -6404,9 +6864,6 @@ const generateBillPDF = async (
     }
   }
 
-  doc.setFont(settings.fontStyle, "bold");
-  doc.text(bill.preparedBy, signatureCenterX, finalY + 40, { align: "center" });
-
   // Terms & Conditions
   if (bill.termsAndConditions) {
     doc.setFontSize(9);
@@ -6417,7 +6874,13 @@ const generateBillPDF = async (
     doc.text(splitTerms, 20, finalY + 25);
   }
 
-  const fileName = `${bill.type}_${bill.billNumber}.pdf`;
+  const companyPrefix = settings.companyName
+    .replace(/\s+/g, "_")
+    .toLowerCase();
+  const sanitizedProject = bill.site.replace(/\s+/g, "_").toLowerCase();
+  const sanitizedClient = (bill.recipientName || "client").replace(/\s+/g, "_").toLowerCase();
+  const dateStr = new Date().toISOString().split("T")[0];
+  const fileName = `${companyPrefix}_${bill.type}_${bill.billNumber}_${sanitizedClient}_${sanitizedProject}_${dateStr}.pdf`;
   const isCapacitor = (window as any).Capacitor?.isNativePlatform();
 
   if (action === "bloburl") {
@@ -7460,11 +7923,6 @@ function BillHistoryView({
                   <span className="text-xs text-[#78909C]">
                     {new Date(bill.date).toLocaleDateString("en-GB")}
                   </span>
-                  {isSuperAdmin && bill.createdByEmail && (
-                    <span className="text-[10px] font-bold text-[#D32F2F] bg-red-50 px-1 rounded">
-                      {bill.createdByEmail.split("@")[0]}
-                    </span>
-                  )}
                 </div>
                 <h3 className="font-bold text-[#1A237E] mt-1">
                   {bill.recipientName}
@@ -8409,11 +8867,6 @@ export function MeetingsView({
                     <p className="text-xs border-l-2 border-slate-200 pl-2 py-0.5 text-slate-600 bg-slate-50 rounded-r line-clamp-2">
                       {meeting.agenda}
                     </p>
-                    {isSuperAdmin && meeting.createdByEmail && (
-                      <p className="text-[9px] font-bold text-[#D32F2F] mt-1">
-                        Created by: {meeting.createdByEmail.split("@")[0]}
-                      </p>
-                    )}
                   </div>
                 </div>
 
