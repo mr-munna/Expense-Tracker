@@ -1225,6 +1225,7 @@ function AppContent() {
             onDeleteProjects={deleteProjectExpenses}
             onUpdateProject={updateProjectExpense}
             isAdmin={hasPermission("payments", "edit")}
+            isSuperAdmin={isSuperAdmin}
           />
         );
       case "PROJECT_SUMMARY":
@@ -1458,6 +1459,7 @@ function AppContent() {
               setCurrentView("TOMORROW_WORK");
             }}
             isAdmin={hasPermission("tomorrowWork", "edit")}
+            isSuperAdmin={isSuperAdmin}
             onDeleteDate={async (date) => {
               const newData = { ...tomorrowWorkData };
               delete newData[date];
@@ -1571,6 +1573,7 @@ function AppContent() {
             onBack={() => setCurrentView("DASHBOARD")}
             pdfSettings={pdfSettings}
             isAdmin={hasPermission("historyLogs", "edit")}
+            isSuperAdmin={isSuperAdmin}
           />
         );
       case "PDF_SETTINGS":
@@ -2161,6 +2164,7 @@ function DashboardView({
   projectExpenses: ProjectExpense[];
   onDetails: () => void;
 }) {
+  const { profile, isSuperAdmin } = useAuth();
   const COLORS = [
     "#0D47A1",
     "#2E7D32",
@@ -2302,6 +2306,7 @@ function DashboardView({
         project: p.projectName,
         amount: p.payment + (p.transport || 0),
         type: "Emp Payment",
+        createdByEmail: p.createdByEmail,
       })),
       ...projectExpenses.map((p) => ({
         id: p.id,
@@ -2311,6 +2316,7 @@ function DashboardView({
         project: p.projectName,
         amount: p.materialsCost + p.transportCost + p.othersCost,
         type: "Proj Expense",
+        createdByEmail: p.createdByEmail,
       })),
     ];
 
@@ -2324,76 +2330,78 @@ function DashboardView({
       </h2>
 
       {/* Expense Cards */}
-      <div className="grid grid-cols-1 gap-4">
-        {/* Total Expense Card */}
-        <div className="bg-white rounded-2xl p-6 shadow-xl border border-[#B0BEC5] text-center relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-[#0D47A1]/10" />
-          <p className="text-[#FF9900] font-bold mb-2 flex items-center justify-center gap-2">
-            ---------- Total Expense ----------
-          </p>
-          <h3 className="text-3xl font-bold text-[#2E7D32] mb-4">
-            {formatCurrency(stats.totalExpense)}
-          </h3>
-          <div className="grid grid-cols-2 gap-4 border-t border-[#B0BEC5]/30 pt-4">
-            <div className="text-left">
-              <p className="text-[10px] text-[#78909C] font-bold uppercase">
-                Employee Cost
-              </p>
-              <p className="text-sm font-bold text-[#1A237E]">
-                {formatCurrency(stats.employeeCost)}
-              </p>
+      {profile?.role !== "member" && (
+        <div className="grid grid-cols-1 gap-4">
+          {/* Total Expense Card */}
+          <div className="bg-white rounded-2xl p-6 shadow-xl border border-[#B0BEC5] text-center relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-[#0D47A1]/10" />
+            <p className="text-[#FF9900] font-bold mb-2 flex items-center justify-center gap-2">
+              ---------- Total Expense ----------
+            </p>
+            <h3 className="text-3xl font-bold text-[#2E7D32] mb-4">
+              {formatCurrency(stats.totalExpense)}
+            </h3>
+            <div className="grid grid-cols-2 gap-4 border-t border-[#B0BEC5]/30 pt-4">
+              <div className="text-left">
+                <p className="text-[10px] text-[#78909C] font-bold uppercase">
+                  Employee Cost
+                </p>
+                <p className="text-sm font-bold text-[#1A237E]">
+                  {formatCurrency(stats.employeeCost)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] text-[#78909C] font-bold uppercase">
+                  Materials Cost
+                </p>
+                <p className="text-sm font-bold text-[#1A237E]">
+                  {formatCurrency(stats.materialsCost)}
+                </p>
+              </div>
             </div>
-            <div className="text-right">
-              <p className="text-[10px] text-[#78909C] font-bold uppercase">
-                Materials Cost
-              </p>
-              <p className="text-sm font-bold text-[#1A237E]">
-                {formatCurrency(stats.materialsCost)}
-              </p>
-            </div>
-          </div>
 
-          {/* Compact Project Summary inside the card */}
-          <div className="mt-6">
-            <div className="overflow-hidden rounded-lg border border-[#B0BEC5]/30">
-              <table className="w-full text-[10px] text-left">
-                <tbody>
-                  {projectTotals.map((p, i) => (
-                    <tr
-                      key={p.name}
-                      className={i % 2 === 0 ? "bg-white" : "bg-[#F5F9FD]"}
-                    >
-                      <td className="p-1.5 border-r border-[#B0BEC5]/20 truncate max-w-[120px]">
-                        {p.name}
-                      </td>
-                      <td className="p-1.5 font-bold text-right">
-                        {formatCurrency(p.cost)}
-                      </td>
-                    </tr>
-                  ))}
-                  {projectTotals.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={2}
-                        className="p-4 text-center text-[#78909C]"
+            {/* Compact Project Summary inside the card */}
+            <div className="mt-6">
+              <div className="overflow-hidden rounded-lg border border-[#B0BEC5]/30">
+                <table className="w-full text-[10px] text-left">
+                  <tbody>
+                    {projectTotals.map((p, i) => (
+                      <tr
+                        key={p.name}
+                        className={i % 2 === 0 ? "bg-white" : "bg-[#F5F9FD]"}
                       >
-                        No data
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                        <td className="p-1.5 border-r border-[#B0BEC5]/20 truncate max-w-[120px]">
+                          {p.name}
+                        </td>
+                        <td className="p-1.5 font-bold text-right">
+                          {formatCurrency(p.cost)}
+                        </td>
+                      </tr>
+                    ))}
+                    {projectTotals.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={2}
+                          className="p-4 text-center text-[#78909C]"
+                        >
+                          No data
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
 
-          <button
-            onClick={onDetails}
-            className="mt-4 text-[#0D47A1] font-bold text-xs hover:underline cursor-pointer"
-          >
-            View Details
-          </button>
+            <button
+              onClick={onDetails}
+              className="mt-4 text-[#0D47A1] font-bold text-xs hover:underline cursor-pointer"
+            >
+              View Details
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 gap-6">
@@ -2526,6 +2534,11 @@ function DashboardView({
                 <th className="p-2 border-r border-white/20 w-[25%]">
                   Project
                 </th>
+                {isSuperAdmin && (
+                  <th className="p-2 border-r border-white/20 w-[25%]">
+                    Created By
+                  </th>
+                )}
                 <th className="p-2 border-r border-white/20 w-[15%] text-center">
                   Type
                 </th>
@@ -2547,6 +2560,11 @@ function DashboardView({
                   <td className="p-2 border-r border-[#B0BEC5]/30 truncate max-w-[100px]">
                     {entry.project}
                   </td>
+                  {isSuperAdmin && (
+                    <td className="p-2 border-r border-[#B0BEC5]/30 truncate max-w-[100px] text-[10px] text-[#78909C]">
+                      {entry.createdByEmail || "Unknown"}
+                    </td>
+                  )}
                   <td className="p-2 border-r border-[#B0BEC5]/30 text-center text-[10px] font-bold text-[#455A64]">
                     {entry.type === "Emp Payment" ? "Employee" : "Project"}
                   </td>
@@ -2557,7 +2575,7 @@ function DashboardView({
               ))}
               {recentEntries.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-[#78909C]">
+                  <td colSpan={isSuperAdmin ? 6 : 5} className="p-8 text-center text-[#78909C]">
                     No data available
                   </td>
                 </tr>
@@ -3340,6 +3358,11 @@ function PaymentHistoryView({
                   <th className="p-1 sm:p-2 border-r border-white/20 w-[20%]">
                     Project
                   </th>
+                  {isSuperAdmin && (
+                    <th className="p-1 sm:p-2 border-r border-white/20 w-[15%]">
+                      By
+                    </th>
+                  )}
                   <th className="p-1 sm:p-2 border-r border-white/20 w-[11%]">
                     Pay
                   </th>
@@ -3376,6 +3399,11 @@ function PaymentHistoryView({
                     <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate">
                       {p.projectName}
                     </td>
+                    {isSuperAdmin && (
+                      <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate text-[8px] text-[#78909C]">
+                        {p.createdByEmail || "-"}
+                      </td>
+                    )}
                     <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 font-bold truncate">
                       {p.payment.toLocaleString()}
                     </td>
@@ -3405,7 +3433,7 @@ function PaymentHistoryView({
                 {filteredData.length === 0 && (
                   <tr>
                     <td
-                      colSpan={isAdmin ? 7 : 5}
+                      colSpan={isAdmin ? (isSuperAdmin ? 8 : 7) : 5}
                       className="p-8 text-center text-[#78909C]"
                     >
                       No data found
@@ -3439,6 +3467,11 @@ function PaymentHistoryView({
                   <th className="p-1 sm:p-2 border-r border-white/20 w-[16%]">
                     Project
                   </th>
+                  {isSuperAdmin && (
+                    <th className="p-1 sm:p-2 border-r border-white/20 w-[15%]">
+                      By
+                    </th>
+                  )}
                   <th className="p-1 sm:p-2 border-r border-white/20 w-[15%]">
                     Mat. Name
                   </th>
@@ -3478,6 +3511,11 @@ function PaymentHistoryView({
                     <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate">
                       {pe.projectName}
                     </td>
+                    {isSuperAdmin && (
+                      <td className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate text-[8px] text-[#78909C]">
+                        {pe.createdByEmail || "-"}
+                      </td>
+                    )}
                     <td
                       className="p-1 sm:p-2 border-r border-[#B0BEC5]/30 truncate"
                       title={pe.materialsName}
@@ -4673,6 +4711,9 @@ function RevenueView({
                     <th className="p-2 border-r border-white/20">
                       Project Name
                     </th>
+                    {isSuperAdmin && (
+                      <th className="p-2 border-r border-white/20">Created By</th>
+                    )}
                     <th className="p-2 border-r border-white/20">Amount</th>
                     {isSuperAdmin && <th className="p-2 w-12">Action</th>}
                   </tr>
@@ -4692,6 +4733,11 @@ function RevenueView({
                       <td className="p-2 border-r border-[#B0BEC5]/30 font-medium">
                         {bill.projectName}
                       </td>
+                      {isSuperAdmin && (
+                        <td className="p-2 border-r border-[#B0BEC5]/30 text-[8px] text-[#78909C]">
+                          {bill.createdByEmail || "-"}
+                        </td>
+                      )}
                       <td
                         className={`p-2 font-bold text-[#2E7D32] ${isSuperAdmin ? "border-r border-[#B0BEC5]/30" : ""}`}
                       >
@@ -6371,6 +6417,11 @@ function TomorrowWorkDetailsView({
                 <th className="p-2 border-r border-[#B0BEC5]/30 w-[18%]">
                   Address
                 </th>
+                {isSuperAdmin && (
+                  <th className="p-2 border-r border-[#B0BEC5]/30 w-[12%]">
+                    Created By
+                  </th>
+                )}
                 <th className="p-2 border-r border-[#B0BEC5]/30 w-[20%]">
                   Work Description
                 </th>
@@ -6395,6 +6446,11 @@ function TomorrowWorkDetailsView({
                   <td className="p-2 border-r border-[#B0BEC5]/20 text-[11px] font-medium text-[#455A64] break-words">
                     {row.projectAddress || "N/A"}
                   </td>
+                  {isSuperAdmin && (
+                    <td className="p-2 border-r border-[#B0BEC5]/20 text-[10px] text-[#78909C] break-words">
+                      {row.createdByEmail || "-"}
+                    </td>
+                  )}
                   <td className="p-2 border-r border-[#B0BEC5]/20 text-[11px] font-medium text-[#455A64] break-words whitespace-pre-wrap">
                     {row.workDescription || "N/A"}
                   </td>
@@ -6828,46 +6884,46 @@ const generateBillPDF = async (
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(10);
   doc.setFont(settings.fontStyle, "normal");
-  doc.text(`To,`, 20, 40);
-  doc.text(`Dear Sir,`, 20, 45);
+  doc.text(`To,`, 20, 28);
+  doc.text(`Dear Sir,`, 20, 33);
   doc.setFont(settings.fontStyle, "bold");
-  doc.text(bill.recipientName, 20, 50);
+  doc.text(bill.recipientName, 20, 38);
 
   doc.setFont(settings.fontStyle, "normal");
   doc.text(
     `Date: ${new Date(bill.date).toLocaleDateString("en-GB")}`,
     190,
-    40,
+    28,
     { align: "right" },
   );
   doc.setFont(settings.fontStyle, "bold");
   doc.text(
     `${bill.type === "BILL" ? "Bill No" : "Quote No"}: ${bill.billNumber}${bill.revision && bill.revision > 0 ? ` (${bill.revision})` : ""}`,
     190,
-    45,
+    33,
     { align: "right" },
   );
 
   // Bill/Quotation Title in middle
   doc.setFontSize(16);
   doc.setFont(settings.fontStyle, "bold");
-  doc.text(bill.type, 105, 60, { align: "center" });
+  doc.text(bill.type, 105, 44, { align: "center" });
 
   // Underline for Title
   const titleWidth = doc.getTextWidth(bill.type);
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.5);
-  doc.line(105 - titleWidth / 2, 62, 105 + titleWidth / 2, 62);
+  doc.line(105 - titleWidth / 2, 46, 105 + titleWidth / 2, 46);
 
   doc.setFontSize(10);
   doc.setFont(settings.fontStyle, "bold");
-  doc.text(`Site: `, 20, 70);
+  doc.text(`Site: `, 20, 52);
   doc.setFont(settings.fontStyle, "normal");
-  doc.text(bill.site, 30, 70);
+  doc.text(bill.site, 30, 52);
 
   doc.setFont(settings.fontStyle, "bold");
-  doc.text(`Sub: `, 20, 80);
-  doc.text(bill.subject, 30, 80);
+  doc.text(`Sub: `, 20, 56);
+  doc.text(bill.subject, 30, 56);
 
   // Check empty columns
   const hasAreaName = bill.items.some((i) => i.areaName?.trim() !== "");
@@ -6910,7 +6966,7 @@ const generateBillPDF = async (
   });
 
   autoTable(doc, {
-    startY: 90,
+    startY: 61,
     margin: { top: 40, bottom: 20 },
     head: [columns.map((c) => c.header)],
     body: tableData,
@@ -8064,6 +8120,11 @@ function BillHistoryView({
                   {bill.recipientName}
                 </h3>
                 <p className="text-xs text-[#78909C]">{bill.site}</p>
+                {isSuperAdmin && (
+                  <p className="text-[10px] text-[#78909C] mt-1 italic">
+                    Added by: {bill.createdByEmail || "Unknown"}
+                  </p>
+                )}
               </div>
               <div className="text-right">
                 <p className="font-bold text-[#2E7D32]">
