@@ -5740,19 +5740,26 @@ function AboutView({
 }
 
   const getManpowerColor = (name: string) => {
+    const alphabeticalColors: { [key: string]: string } = {
+      'A': '#f44336', 'B': '#e91e63', 'C': '#9c27b0', 'D': '#673ab7',
+      'E': '#3f51b5', 'F': '#2196f3', 'G': '#03a9f4', 'H': '#00bcd4',
+      'I': '#009688', 'J': '#4caf50', 'K': '#8bc34a', 'L': '#cddc39',
+      'M': '#bf360c', 'N': '#ffc107', 'O': '#ff9800', 'P': '#ff5722',
+      'Q': '#795548', 'R': '#607d8b', 'S': '#1a237e', 'T': '#1b5e20',
+      'U': '#b71c1c', 'V': '#004d40', 'W': '#4a148c', 'X': '#e65100',
+      'Y': '#0d47a1', 'Z': '#827717'
+    };
+
+    const firstLetter = name.trim().charAt(0).toUpperCase();
+    if (alphabeticalColors[firstLetter]) {
+      return alphabeticalColors[firstLetter];
+    }
+
+    // Fallback hashing for non-alphabetic or missing keys
     const colors = [
-      "#0D47A1", // Blue
-      "#C62828", // Red
-      "#2E7D32", // Green
-      "#6A1B9A", // Purple
-      "#F57C00", // Orange
-      "#1565C0", // Light Blue
-      "#AD1457", // Pink
-      "#4527A0", // Deep Purple
-      "#00838F", // Cyan
-      "#00695C", // Teal
-      "#37474F", // Blue Gray
-      "#D84315", // Deep Orange
+      "#0D47A1", "#C62828", "#2E7D32", "#6A1B9A", "#F57C00",
+      "#1565C0", "#AD1457", "#4527A0", "#00838F", "#00695C",
+      "#37474F", "#D84315",
     ];
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
@@ -5954,25 +5961,25 @@ function TomorrowWorkView({
 
       {/* Table View (Responsive) - Compact for screenshots */}
       <div className="bg-white rounded-xl shadow-md border border-[#B0BEC5]/30 overflow-visible">
-        <table className="w-full text-left border-collapse table-fixed">
+        <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-[#F5F9FD] border-b border-[#B0BEC5]/30 text-[8px] font-bold text-[#455A64] uppercase tracking-wider">
-              <th className="p-1 border-r border-[#B0BEC5]/30 w-[8%] text-center">
+              <th className="p-1 border-r border-[#B0BEC5]/30 text-center whitespace-nowrap min-w-[25px]">
                 SL
               </th>
-              <th className="p-1 border-r border-[#B0BEC5]/30 w-[17%] text-center">
+              <th className="p-1 border-r border-[#B0BEC5]/30 text-center min-w-[80px]">
                 Project
               </th>
-              <th className="p-1 border-r border-[#B0BEC5]/30 w-[17%] text-center">
+              <th className="p-1 border-r border-[#B0BEC5]/30 text-center min-w-[80px]">
                 Address
               </th>
-              <th className="p-1 border-r border-[#B0BEC5]/30 w-[18%] text-center">
+              <th className="p-1 border-r border-[#B0BEC5]/30 text-center min-w-[100px]">
                 Work
               </th>
-              <th className="p-1 border-r border-[#B0BEC5]/30 w-[30%] text-center">
+              <th className="p-1 border-r border-[#B0BEC5]/30 text-center min-w-[150px]">
                 Manpower
               </th>
-              <th className="p-1 w-[10%] text-center">OT</th>
+              <th className="p-1 text-center whitespace-nowrap min-w-[35px]">OT</th>
             </tr>
           </thead>
           <tbody>
@@ -6133,7 +6140,7 @@ function TomorrowWorkView({
                 </td>
                 <td className="p-0.5 border-r border-[#B0BEC5]/20 align-top">
                   <div className="space-y-0.5 p-0.5">
-                    <div className="flex flex-wrap gap-0.5">
+                    <div className="flex flex-wrap gap-1">
                       {row.manpowerList.map((name, mIndex) => (
                         <div
                           key={mIndex}
@@ -6142,14 +6149,14 @@ function TomorrowWorkView({
                             color: getManpowerColor(name),
                             borderColor: getManpowerColor(name) + "30",
                           }}
-                          className="flex items-center gap-0.5 px-1 py-0.5 rounded-full text-[8px] font-bold whitespace-nowrap overflow-hidden text-ellipsis max-w-full border"
+                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] font-bold whitespace-nowrap border w-fit"
                         >
                           <span>
                             {mIndex + 1}.{name}
                           </span>
                           <button
                             onClick={() => removeManpower(row.id, mIndex)}
-                            className="hover:text-red-600 shrink-0"
+                            className="hover:text-red-600 shrink-0 ml-0.5"
                           >
                             <X className="w-2 h-2" />
                           </button>
@@ -6405,30 +6412,30 @@ function TomorrowWorkDetailsView({
               <p className="text-xs text-slate-500">Date: {date}</p>
             </div>
           </div>
-          <table className="w-full text-left border-collapse table-fixed border border-[#B0BEC5]/30">
+          <table className="w-full text-left border-collapse border border-[#B0BEC5]/30">
             <thead>
               <tr className="bg-[#F5F9FD] border-b border-[#B0BEC5]/30 text-[10px] font-bold text-[#455A64] uppercase tracking-wider">
-                <th className="p-2 border-r border-[#B0BEC5]/30 w-[6%] text-center">
+                <th className="p-2 border-r border-[#B0BEC5]/30 text-center whitespace-nowrap min-w-[30px]">
                   SL
                 </th>
-                <th className="p-2 border-r border-[#B0BEC5]/30 w-[18%]">
+                <th className="p-2 border-r border-[#B0BEC5]/30 min-w-[120px]">
                   Project
                 </th>
-                <th className="p-2 border-r border-[#B0BEC5]/30 w-[18%]">
+                <th className="p-2 border-r border-[#B0BEC5]/30 min-w-[120px]">
                   Address
                 </th>
                 {isSuperAdmin && (
-                  <th className="p-2 border-r border-[#B0BEC5]/30 w-[12%]">
+                  <th className="p-2 border-r border-[#B0BEC5]/30 min-w-[100px]">
                     Created By
                   </th>
                 )}
-                <th className="p-2 border-r border-[#B0BEC5]/30 w-[20%]">
+                <th className="p-2 border-r border-[#B0BEC5]/30 min-w-[150px]">
                   Work Description
                 </th>
-                <th className="p-2 border-r border-[#B0BEC5]/30 w-[30%]">
+                <th className="p-2 border-r border-[#B0BEC5]/30 min-w-[200px]">
                   Manpower
                 </th>
-                <th className="p-2 w-[8%] text-center">OT</th>
+                <th className="p-2 text-center whitespace-nowrap min-w-[40px]">OT</th>
               </tr>
             </thead>
             <tbody>
@@ -6465,7 +6472,7 @@ function TomorrowWorkDetailsView({
                               color: getManpowerColor(name),
                               borderColor: getManpowerColor(name) + "30",
                             }}
-                            className="px-1.5 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap border"
+                            className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap border w-fit"
                           >
                             {mIndex + 1}. {name}
                           </span>
