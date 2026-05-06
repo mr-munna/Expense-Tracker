@@ -83,6 +83,24 @@ export interface CollectedBill {
   createdByEmail?: string;
 }
 
+export interface PersonalReceivedMoney {
+  id: string;
+  date: string;
+  amount: number;
+  note?: string;
+  method?: string;
+  createdByEmail: string;
+}
+
+export interface PersonalGivenMoney {
+  id: string;
+  date: string;
+  amount: number;
+  name: string;
+  projectName?: string;
+  createdByEmail: string;
+}
+
 export interface Meeting {
   id: string;
   clientName: string;
@@ -143,4 +161,4 @@ export interface ProjectListEntry {
   }>;
 }
 
-export type View = 'DASHBOARD' | 'PAYMENT_HISTORY' | 'PROJECT_SUMMARY' | 'REVENUE' | 'ADD_DATA' | 'EMPLOYEE_TOTALS' | 'EXPORT' | 'ABOUT' | 'CLOUD_SYNC' | 'CONTACT_INFO' | 'TOMORROW_WORK' | 'TOMORROW_WORK_HISTORY' | 'TOMORROW_WORK_DETAILS' | 'BILL' | 'QUOTATION' | 'BILL_HISTORY' | 'PDF_SETTINGS' | 'USERS' | 'PROJECT_LIST' | 'MEETINGS';
+export type View = 'DASHBOARD' | 'PROFILE' | 'PAYMENT_HISTORY' | 'PROJECT_SUMMARY' | 'REVENUE' | 'ADD_DATA' | 'EMPLOYEE_TOTALS' | 'EXPORT' | 'ABOUT' | 'CLOUD_SYNC' | 'CONTACT_INFO' | 'TOMORROW_WORK' | 'TOMORROW_WORK_HISTORY' | 'TOMORROW_WORK_DETAILS' | 'BILL' | 'QUOTATION' | 'BILL_HISTORY' | 'PDF_SETTINGS' | 'USERS' | 'PROJECT_LIST' | 'MEETINGS';

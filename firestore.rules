@@ -94,27 +94,44 @@ service cloud.firestore {
 
     match /payments/{id} {
       allow read: if isMember();
-      allow create, update, delete: if isAdmin();
+      allow create: if isMember();
+      allow update, delete: if isAdmin() || (isMember() && resource.data.createdBy == request.auth.uid);
     }
 
     match /expenses/{id} {
       allow read: if isMember();
-      allow create, update, delete: if isAdmin();
+      allow create: if isMember();
+      allow update, delete: if isAdmin() || (isMember() && resource.data.createdBy == request.auth.uid);
     }
 
     match /bills/{id} {
       allow read: if isMember();
-      allow create, update, delete: if isAdmin();
+      allow create: if isMember();
+      allow update, delete: if isAdmin();
     }
 
     match /quotations/{id} {
       allow read: if isMember();
-      allow create, update, delete: if isAdmin();
+      allow create: if isMember();
+      allow update, delete: if isAdmin();
     }
 
     match /collectedBills/{id} {
       allow read: if isMember();
-      allow create, update, delete: if isAdmin();
+      allow create: if isMember();
+      allow update, delete: if isAdmin() || (isMember() && resource.data.createdBy == request.auth.uid);
+    }
+
+    match /personalReceivedMoney/{id} {
+      allow read: if isMember();
+      allow create: if isMember();
+      allow update, delete: if isAdmin() || (isMember() && resource.data.createdBy == request.auth.uid);
+    }
+
+    match /personalGivenMoney/{id} {
+      allow read: if isMember();
+      allow create: if isMember();
+      allow update, delete: if isAdmin() || (isMember() && resource.data.createdBy == request.auth.uid);
     }
 
     match /project_list/{id} {

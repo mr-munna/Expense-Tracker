@@ -84,6 +84,8 @@ import {
   UserRole,
   UserProfile,
   CollectedBill,
+  PersonalReceivedMoney,
+  PersonalGivenMoney,
   ProjectListEntry,
   Meeting,
 } from "./types";
@@ -239,7 +241,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
             const defaultLevel = isAdmin ? "edit" : "view";
             currentProfile.permissions = {
               dashboard: defaultLevel,
-              addData: defaultLevel,
+              addData: "edit", // Member can save data
               payments: defaultLevel,
               projects: defaultLevel,
               revenue: defaultLevel,
@@ -308,7 +310,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
                   currentProfile.role === "super_admin" ||
                   currentProfile.role === "admin"
                     ? "edit"
-                    : "none";
+                    : (key === "addData" ? "edit" : "none");
                 needsUpdate = true;
               }
             });
@@ -552,6 +554,8 @@ function AppContent() {
   const [bills, setBills] = useState<Bill[]>([]);
   const [quotations, setQuotations] = useState<Bill[]>([]);
   const [collectedBills, setCollectedBills] = useState<CollectedBill[]>([]);
+  const [personalReceivedMoney, setPersonalReceivedMoney] = useState<PersonalReceivedMoney[]>([]);
+  const [personalGivenMoney, setPersonalGivenMoney] = useState<PersonalGivenMoney[]>([]);
   const [nextBillNumber, setNextBillNumber] = useState<number>(1);
   const [nextQuotationNumber, setNextQuotationNumber] = useState<number>(1);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
@@ -715,6 +719,55 @@ function AppContent() {
           ),
         );
       },
+      (error) => {
+        const errInfo = {
+          error: error instanceof Error ? error.message : String(error),
+          authInfo: { userId: user?.uid, email: user?.email },
+          operationType: "get",
+          path: "collectedBills"
+        };
+        console.error("Firestore Error: ", JSON.stringify(errInfo));
+      }
+    );
+
+    const unsubPersonalReceivedMoney = onSnapshot(
+      collection(db, "personalReceivedMoney"),
+      (snap) => {
+        setPersonalReceivedMoney(
+          snap.docs.map(
+            (doc) => ({ ...doc.data(), id: doc.id }) as PersonalReceivedMoney,
+          ),
+        );
+      },
+      (error) => {
+        const errInfo = {
+          error: error instanceof Error ? error.message : String(error),
+          authInfo: { userId: user?.uid, email: user?.email },
+          operationType: "get",
+          path: "personalReceivedMoney"
+        };
+        console.error("Firestore Error: ", JSON.stringify(errInfo));
+      }
+    );
+
+    const unsubPersonalGivenMoney = onSnapshot(
+      collection(db, "personalGivenMoney"),
+      (snap) => {
+        setPersonalGivenMoney(
+          snap.docs.map(
+            (doc) => ({ ...doc.data(), id: doc.id }) as PersonalGivenMoney,
+          ),
+        );
+      },
+      (error) => {
+        const errInfo = {
+          error: error instanceof Error ? error.message : String(error),
+          authInfo: { userId: user?.uid, email: user?.email },
+          operationType: "get",
+          path: "personalGivenMoney"
+        };
+        console.error("Firestore Error: ", JSON.stringify(errInfo));
+      }
     );
 
     const unsubSettings = onSnapshot(doc(db, "settings", "pdf"), (snap) => {
@@ -751,6 +804,8 @@ function AppContent() {
       unsubBills();
       unsubQuotations();
       unsubCollectedBills();
+      unsubPersonalReceivedMoney();
+      unsubPersonalGivenMoney();
       unsubSettings();
       unsubTomorrow();
       unsubProjectList();
@@ -1030,6 +1085,82 @@ function AppContent() {
     }
   };
 
+  const addPersonalReceivedMoney = async (money: Omit<PersonalReceivedMoney, "id">) => {
+    try {
+      const id = generateId();
+      await setDoc(doc(db, "personalReceivedMoney", id), {
+        ...money,
+        id,
+        createdBy: user?.uid,
+        createdByEmail: user?.email || null,
+      });
+    } catch (error: any) {
+      console.error("Error adding personal received money:", error);
+      alert("Failed to save received money. You may not have permission.");
+      throw error;
+    }
+  };
+
+  const updatePersonalReceivedMoney = async (money: PersonalReceivedMoney) => {
+    try {
+      await updateDoc(doc(db, "personalReceivedMoney", money.id), {
+        ...money,
+      });
+    } catch (error: any) {
+      console.error("Error updating personal received money:", error);
+      alert("Failed to update received money. You may not have permission.");
+      throw error;
+    }
+  };
+
+  const deletePersonalReceivedMoney = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this received money record?")) return;
+    try {
+      await deleteDoc(doc(db, "personalReceivedMoney", id));
+    } catch (error: any) {
+      console.error("Error deleting personal received money:", error);
+      alert("Failed to delete received money. You may not have permission.");
+      throw error;
+    }
+  };
+
+  const addPersonalGivenMoney = async (money: Omit<PersonalGivenMoney, "id">) => {
+    try {
+      const id = generateId();
+      await setDoc(doc(db, "personalGivenMoney", id), {
+        ...money,
+        id,
+      });
+    } catch (error: any) {
+      console.error("Error adding personal given money:", error);
+      alert("Failed to save given money. You may not have permission.");
+      throw error;
+    }
+  };
+
+  const updatePersonalGivenMoney = async (money: PersonalGivenMoney) => {
+    try {
+      await updateDoc(doc(db, "personalGivenMoney", money.id), {
+        ...money,
+      });
+    } catch (error: any) {
+      console.error("Error updating personal given money:", error);
+      alert("Failed to update given money. You may not have permission.");
+      throw error;
+    }
+  };
+
+  const deletePersonalGivenMoney = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this given money record?")) return;
+    try {
+      await deleteDoc(doc(db, "personalGivenMoney", id));
+    } catch (error: any) {
+      console.error("Error deleting personal given money:", error);
+      alert("Failed to delete given money. You may not have permission.");
+      throw error;
+    }
+  };
+
   const deleteProjectData = async (projectName: string) => {
     if (
       !window.confirm(
@@ -1200,6 +1331,21 @@ function AppContent() {
             payments={payments}
             projectExpenses={projectExpenses}
             onDetails={() => setCurrentView("PAYMENT_HISTORY")}
+          />
+        );
+      case "PROFILE":
+        return (
+          <ProfileDashboardView
+            payments={payments}
+            projectExpenses={projectExpenses}
+            personalReceivedMoney={personalReceivedMoney}
+            personalGivenMoney={personalGivenMoney}
+            onAddPersonalReceivedMoney={addPersonalReceivedMoney}
+            onUpdatePersonalReceivedMoney={updatePersonalReceivedMoney}
+            onDeletePersonalReceivedMoney={deletePersonalReceivedMoney}
+            onAddPersonalGivenMoney={addPersonalGivenMoney}
+            onUpdatePersonalGivenMoney={updatePersonalGivenMoney}
+            onDeletePersonalGivenMoney={deletePersonalGivenMoney}
           />
         );
       case "PAYMENT_HISTORY":
@@ -1459,7 +1605,6 @@ function AppContent() {
               setCurrentView("TOMORROW_WORK");
             }}
             isAdmin={hasPermission("tomorrowWork", "edit")}
-            isSuperAdmin={isSuperAdmin}
             onDeleteDate={async (date) => {
               const newData = { ...tomorrowWorkData };
               delete newData[date];
@@ -1732,6 +1877,14 @@ function AppContent() {
                   Navigation
                 </p>
                 {[
+                  {
+                    view: "PROFILE",
+                    label: "User",
+                    value: "My Profile",
+                    icon: <User className="w-5 h-5" />,
+                    bg: "bg-blue-50",
+                    color: "text-blue-600",
+                  },
                   ...(hasPermission("projectList", "view")
                     ? [
                         {
@@ -2096,6 +2249,13 @@ function AppContent() {
             color="#0D47A1"
           />
         )}
+        <NavButton
+          active={currentView === "PROFILE"}
+          onClick={() => setCurrentView("PROFILE")}
+          icon={<User className="w-5 h-5" />}
+          label="PROFILE"
+          color="#FF9900"
+        />
         {hasPermission("projects", "view") && (
           <NavButton
             active={currentView === "PROJECT_SUMMARY"}
@@ -2164,49 +2324,29 @@ function DashboardView({
   projectExpenses: ProjectExpense[];
   onDetails: () => void;
 }) {
-  const { profile, isSuperAdmin } = useAuth();
-  const COLORS = [
-    "#0D47A1",
-    "#2E7D32",
-    "#FFB300",
-    "#ED7D31",
-    "#7B1FA2",
-    "#00897B",
-  ];
+  const { isSuperAdmin } = useAuth();
+  const COLORS = ["#0D47A1", "#2E7D32", "#FFB300", "#ED7D31", "#7B1FA2", "#00897B"];
 
   const projectTotals = useMemo(() => {
     const totals: Record<string, { name: string; cost: number }> = {};
-
     payments.forEach((p) => {
       const key = p.projectName.trim().toLowerCase();
       if (!totals[key]) totals[key] = { name: p.projectName, cost: 0 };
       totals[key].cost += p.payment + (p.transport || 0);
     });
-
     projectExpenses.forEach((p) => {
       const key = p.projectName.trim().toLowerCase();
       if (!totals[key]) totals[key] = { name: p.projectName, cost: 0 };
-      const cost = p.materialsCost + p.transportCost + p.othersCost;
-      totals[key].cost += cost;
+      totals[key].cost += p.materialsCost + p.transportCost + p.othersCost;
     });
-
-    return Object.values(totals).slice(0, 5); // Show top 5 or first 5
+    return Object.values(totals).sort((a, b) => b.cost - a.cost).slice(0, 5);
   }, [payments, projectExpenses]);
 
   const pieData = useMemo(() => {
     const empPayment = payments.reduce((sum, p) => sum + p.payment, 0);
-    const empTransport = payments.reduce(
-      (sum, p) => sum + (p.transport || 0),
-      0,
-    );
-    const materials = projectExpenses.reduce(
-      (sum, p) => sum + p.materialsCost,
-      0,
-    );
-    const projTransport = projectExpenses.reduce(
-      (sum, p) => sum + p.transportCost,
-      0,
-    );
+    const empTransport = payments.reduce((sum, p) => sum + (p.transport || 0), 0);
+    const materials = projectExpenses.reduce((sum, p) => sum + p.materialsCost, 0);
+    const projTransport = projectExpenses.reduce((sum, p) => sum + p.transportCost, 0);
     const others = projectExpenses.reduce((sum, p) => sum + p.othersCost, 0);
 
     return [
@@ -2225,49 +2365,21 @@ function DashboardView({
 
   const monthlyData = useMemo(() => {
     const months: Record<string, number> = {};
-    const monthNames = [
-      "Jan",
-      "Feb",
-      "Mar",
-      "Apr",
-      "May",
-      "Jun",
-      "Jul",
-      "Aug",
-      "Sep",
-      "Oct",
-      "Nov",
-      "Dec",
-    ];
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
     const processItem = (item: { timestamp: string; cost: number }) => {
       try {
-        // Expected format: "DD/MM/YYYY, HH:MM:SS"
         const datePart = item.timestamp.split(",")[0];
         const parts = datePart.split("/");
         if (parts.length === 3) {
-          const m = parseInt(parts[1]);
-          const y = parts[2].trim();
-          const sortKey = `${y}-${parts[1].padStart(2, "0")}`;
+          const sortKey = `${parts[2].trim()}-${parts[1].padStart(2, "0")}`;
           months[sortKey] = (months[sortKey] || 0) + item.cost;
         }
-      } catch (e) {
-        console.error("Error parsing date:", item.timestamp);
-      }
+      } catch (e) {}
     };
 
-    payments.forEach((p) =>
-      processItem({
-        timestamp: p.timestamp,
-        cost: p.payment + (p.transport || 0),
-      }),
-    );
-    projectExpenses.forEach((p) =>
-      processItem({
-        timestamp: p.timestamp,
-        cost: p.materialsCost + p.transportCost + p.othersCost,
-      }),
-    );
+    payments.forEach((p) => processItem({ timestamp: p.timestamp, cost: p.payment + (p.transport || 0) }));
+    projectExpenses.forEach((p) => processItem({ timestamp: p.timestamp, cost: p.materialsCost + p.transportCost + p.othersCost }));
 
     return Object.entries(months)
       .sort((a, b) => a[0].localeCompare(b[0]))
@@ -2278,306 +2390,594 @@ function DashboardView({
           total,
         };
       })
-      .slice(-6); // Last 6 months
-  }, [payments, projectExpenses]);
-
-  const recentEntries = useMemo(() => {
-    const parseTimestamp = (ts: string) => {
-      if (!ts) return 0;
-      const match = ts.match(
-        /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[, ]+(.*))?/,
-      );
-      if (match) {
-        const [, d, m, y, t] = match;
-        const time = t || "00:00:00";
-        return new Date(
-          `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}T${time}`,
-        ).getTime();
-      }
-      return 0;
-    };
-
-    const combined = [
-      ...payments.map((p) => ({
-        id: p.id,
-        timestamp: p.timestamp,
-        timeVal: parseTimestamp(p.timestamp),
-        name: p.employeeName,
-        project: p.projectName,
-        amount: p.payment + (p.transport || 0),
-        type: "Emp Payment",
-        createdByEmail: p.createdByEmail,
-      })),
-      ...projectExpenses.map((p) => ({
-        id: p.id,
-        timestamp: p.timestamp,
-        timeVal: parseTimestamp(p.timestamp),
-        name: p.materialsName || "-",
-        project: p.projectName,
-        amount: p.materialsCost + p.transportCost + p.othersCost,
-        type: "Proj Expense",
-        createdByEmail: p.createdByEmail,
-      })),
-    ];
-
-    return combined.sort((a, b) => b.timeVal - a.timeVal).slice(0, 10);
+      .slice(-6);
   }, [payments, projectExpenses]);
 
   return (
     <div className="space-y-6 pb-10">
       <h2 className="text-xl font-bold border-b-2 border-[#0D47A1] inline-block pb-1 text-[#FF9900]">
-        Dashboard
+        Global Dashboard
       </h2>
 
-      {/* Expense Cards */}
-      {profile?.role !== "member" && (
-        <div className="grid grid-cols-1 gap-4">
-          {/* Total Expense Card */}
-          <div className="bg-white rounded-2xl p-6 shadow-xl border border-[#B0BEC5] text-center relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-1 bg-[#0D47A1]/10" />
-            <p className="text-[#FF9900] font-bold mb-2 flex items-center justify-center gap-2">
-              ---------- Total Expense ----------
-            </p>
-            <h3 className="text-3xl font-bold text-[#2E7D32] mb-4">
-              {formatCurrency(stats.totalExpense)}
-            </h3>
-            <div className="grid grid-cols-2 gap-4 border-t border-[#B0BEC5]/30 pt-4">
-              <div className="text-left">
-                <p className="text-[10px] text-[#78909C] font-bold uppercase">
-                  Employee Cost
-                </p>
-                <p className="text-sm font-bold text-[#1A237E]">
-                  {formatCurrency(stats.employeeCost)}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] text-[#78909C] font-bold uppercase">
-                  Materials Cost
-                </p>
-                <p className="text-sm font-bold text-[#1A237E]">
-                  {formatCurrency(stats.materialsCost)}
-                </p>
-              </div>
-            </div>
-
-            {/* Compact Project Summary inside the card */}
-            <div className="mt-6">
-              <div className="overflow-hidden rounded-lg border border-[#B0BEC5]/30">
-                <table className="w-full text-[10px] text-left">
-                  <tbody>
-                    {projectTotals.map((p, i) => (
-                      <tr
-                        key={p.name}
-                        className={i % 2 === 0 ? "bg-white" : "bg-[#F5F9FD]"}
-                      >
-                        <td className="p-1.5 border-r border-[#B0BEC5]/20 truncate max-w-[120px]">
-                          {p.name}
-                        </td>
-                        <td className="p-1.5 font-bold text-right">
-                          {formatCurrency(p.cost)}
-                        </td>
-                      </tr>
-                    ))}
-                    {projectTotals.length === 0 && (
-                      <tr>
-                        <td
-                          colSpan={2}
-                          className="p-4 text-center text-[#78909C]"
-                        >
-                          No data
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <button
-              onClick={onDetails}
-              className="mt-4 text-[#0D47A1] font-bold text-xs hover:underline cursor-pointer"
-            >
-              View Details
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 gap-6">
-        <div className="text-center px-4 bg-[#E3F2FD] py-2 rounded-lg border border-[#B0BEC5]/30">
-          <p className="text-[10px] text-[#0D47A1] font-bold italic flex items-center justify-center gap-2">
-            <Info className="w-3 h-3" />
-            Visual summary of your spending patterns across projects and months.
+      <div className="grid grid-cols-1 gap-4">
+        <div className="bg-white rounded-2xl p-6 shadow-xl border border-[#B0BEC5] text-center relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-[#0D47A1]/10" />
+          <p className="text-[#FF9900] font-bold mb-2 flex items-center justify-center gap-2">
+            ---------- Total Global Expense ----------
           </p>
+          <h3 className="text-3xl font-bold text-[#2E7D32] mb-4">
+            {formatCurrency(stats.totalExpense)}
+          </h3>
+          <div className="grid grid-cols-2 gap-4 border-t border-[#B0BEC5]/30 pt-4">
+            <div className="text-left">
+              <p className="text-[10px] text-[#78909C] font-bold uppercase">Employee Cost</p>
+              <p className="text-sm font-bold text-[#1A237E]">{formatCurrency(stats.employeeCost)}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] text-[#78909C] font-bold uppercase">Materials Cost</p>
+              <p className="text-sm font-bold text-[#1A237E]">{formatCurrency(stats.materialsCost)}</p>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <div className="overflow-hidden rounded-lg border border-[#B0BEC5]/30">
+              <table className="w-full text-[10px] text-left">
+                <tbody>
+                  {projectTotals.map((p, i) => (
+                    <tr key={p.name} className={i % 2 === 0 ? "bg-white" : "bg-[#F5F9FD]"}>
+                      <td className="p-1.5 border-r border-[#B0BEC5]/20 truncate max-w-[120px]">{p.name}</td>
+                      <td className="p-1.5 font-bold text-right">{formatCurrency(p.cost)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <button onClick={onDetails} className="mt-4 text-[#0D47A1] font-bold text-xs hover:underline cursor-pointer">
+            View All Details
+          </button>
         </div>
-        {/* Pie Chart */}
+      </div>
+
+      <div className="grid grid-cols-1 gap-6">
         <div className="bg-white rounded-2xl p-4 shadow-lg border border-[#B0BEC5]">
           <h3 className="text-sm font-bold text-[#0D47A1] mb-4 flex items-center gap-2">
-            <PieChartIcon className="w-4 h-4" />
-            Expense Distribution
+            <PieChartIcon className="w-4 h-4" /> Expense Distribution
           </h3>
           <div className="h-80 w-full">
             {pieData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="45%"
-                    innerRadius={50}
-                    outerRadius={75}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {pieData.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={COLORS[index % COLORS.length]}
-                      />
+                  <Pie data={pieData} cx="50%" cy="45%" innerRadius={50} outerRadius={75} paddingAngle={5} dataKey="value">
+                    {pieData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip
-                    formatter={(value: number) => formatCurrency(value)}
-                    contentStyle={{
-                      borderRadius: "8px",
-                      border: "none",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                    }}
-                  />
-                  <Legend
-                    verticalAlign="bottom"
-                    align="left"
-                    wrapperStyle={{
-                      paddingTop: "5px",
-                      paddingLeft: "10px",
-                      fontSize: "10px",
-                      fontWeight: "bold",
-                      lineHeight: "1.6",
-                    }}
-                    iconSize={10}
-                    iconType="circle"
-                  />
+                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Legend verticalAlign="bottom" align="left" wrapperStyle={{ paddingTop: "5px", fontSize: "10px" }} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex items-center justify-center text-[#78909C] text-sm">
-                No data for distribution
-              </div>
+              <div className="h-full flex items-center justify-center text-[#78909C] text-sm">No data</div>
             )}
           </div>
         </div>
 
-        {/* Bar Chart */}
         <div className="bg-white rounded-2xl p-4 shadow-lg border border-[#B0BEC5]">
           <h3 className="text-sm font-bold text-[#0D47A1] mb-4 flex items-center gap-2">
-            <BarChart3 className="w-4 h-4" />
-            Monthly Expenses
+            <BarChart3 className="w-4 h-4" /> Monthly Global Expenses
           </h3>
           <div className="h-64 w-full">
             {monthlyData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={monthlyData}>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    vertical={false}
-                    stroke="#E0E0E0"
-                  />
-                  <XAxis
-                    dataKey="month"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 10, fontWeight: "bold", fill: "#78909C" }}
-                  />
-                  <YAxis
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 10, fontWeight: "bold", fill: "#78909C" }}
-                    tickFormatter={(value) =>
-                      value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value
-                    }
-                  />
-                  <Tooltip
-                    formatter={(value: number) => formatCurrency(value)}
-                    cursor={{ fill: "#F5F9FD" }}
-                    contentStyle={{
-                      borderRadius: "8px",
-                      border: "none",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                    }}
-                  />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(val) => val >= 1000 ? `${val / 1000}k` : val} />
+                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
                   <Bar dataKey="total" fill="#0D47A1" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex items-center justify-center text-[#78909C] text-sm">
-                No monthly data available
-              </div>
+              <div className="h-full flex items-center justify-center text-[#78909C] text-sm">No data</div>
             )}
           </div>
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* Payment History Table */}
+function ProfileDashboardView({
+  payments,
+  projectExpenses,
+  personalReceivedMoney,
+  personalGivenMoney,
+  onAddPersonalReceivedMoney,
+  onUpdatePersonalReceivedMoney,
+  onDeletePersonalReceivedMoney,
+  onAddPersonalGivenMoney,
+  onUpdatePersonalGivenMoney,
+  onDeletePersonalGivenMoney,
+}: {
+  payments: EmployeePayment[];
+  projectExpenses: ProjectExpense[];
+  personalReceivedMoney: PersonalReceivedMoney[];
+  personalGivenMoney: PersonalGivenMoney[];
+  onAddPersonalReceivedMoney: (m: Omit<PersonalReceivedMoney, "id">) => Promise<void>;
+  onUpdatePersonalReceivedMoney: (m: PersonalReceivedMoney) => Promise<void>;
+  onDeletePersonalReceivedMoney: (id: string) => Promise<void>;
+  onAddPersonalGivenMoney: (m: Omit<PersonalGivenMoney, "id">) => Promise<void>;
+  onUpdatePersonalGivenMoney: (m: PersonalGivenMoney) => Promise<void>;
+  onDeletePersonalGivenMoney: (id: string) => Promise<void>;
+}) {
+  const { profile, user } = useAuth();
+  
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [viewingEmail, setViewingEmail] = useState<string>("");
+
+  useEffect(() => {
+    if (profile?.role === "super_admin" || user?.email === "bijoymahmudmunna@gmail.com") {
+      const q = query(collection(db, "users"));
+      const unsubscribe = onSnapshot(q, (snap) => {
+        const usersList = snap.docs.map((doc) => doc.data() as UserProfile);
+        setUsers(usersList);
+      });
+      return unsubscribe;
+    }
+  }, [profile, user]);
+
+  const targetEmail = viewingEmail || profile?.email;
+  const targetUser = users.find(u => u.email === targetEmail) || profile;
+
+  const [showReceivedForm, setShowReceivedForm] = useState(false);
+  const [editingReceivedMoney, setEditingReceivedMoney] = useState<PersonalReceivedMoney | null>(null);
+  const [receivedForm, setReceivedForm] = useState({
+    date: new Date().toISOString().split("T")[0],
+    note: "",
+    amount: "",
+    method: "Cash",
+  });
+
+  const [showGivenForm, setShowGivenForm] = useState(false);
+  const [editingGivenMoney, setEditingGivenMoney] = useState<PersonalGivenMoney | null>(null);
+  const [givenForm, setGivenForm] = useState({
+    date: new Date().toISOString().split("T")[0],
+    name: "",
+    projectName: "",
+    amount: "",
+  });
+
+  const handleEditReceived = (money: PersonalReceivedMoney) => {
+    let [d, m, y] = ["", "", ""];
+    if (money.date && money.date.includes("/")) {
+      [d, m, y] = money.date.split("/");
+    }
+    setEditingReceivedMoney(money);
+    setReceivedForm({
+      date: y && m && d ? `${y}-${m}-${d}` : new Date().toISOString().split("T")[0],
+      note: money.note || "",
+      amount: money.amount.toString(),
+      method: money.method || "Cash",
+    });
+    setShowReceivedForm(true);
+    setShowGivenForm(false);
+  };
+
+  const handleEditGiven = (money: PersonalGivenMoney) => {
+    let [d, m, y] = ["", "", ""];
+    if (money.date && money.date.includes("/")) {
+      [d, m, y] = money.date.split("/");
+    }
+    setEditingGivenMoney(money);
+    setGivenForm({
+      date: y && m && d ? `${y}-${m}-${d}` : new Date().toISOString().split("T")[0],
+      name: money.name || "",
+      projectName: money.projectName || "",
+      amount: money.amount.toString(),
+    });
+    setShowGivenForm(true);
+    setShowReceivedForm(false);
+  };
+
+  const handleSaveReceived = async () => {
+    if (!receivedForm.amount || !receivedForm.date) return;
+    try {
+      const [y, m, d] = receivedForm.date.split("-");
+      const formattedDate = `${d}/${m}/${y}`;
+      if (editingReceivedMoney) {
+        await onUpdatePersonalReceivedMoney({
+          ...editingReceivedMoney,
+          date: formattedDate,
+          amount: parseFloat(receivedForm.amount),
+          note: receivedForm.note,
+          method: receivedForm.method,
+        });
+        alert("Money received updated successfully.");
+      } else {
+        await onAddPersonalReceivedMoney({
+          date: formattedDate,
+          amount: parseFloat(receivedForm.amount),
+          note: receivedForm.note,
+          method: receivedForm.method,
+          createdByEmail: targetEmail || "",
+        });
+        alert("Money received added successfully.");
+      }
+      setShowReceivedForm(false);
+      setEditingReceivedMoney(null);
+      setReceivedForm({ date: new Date().toISOString().split("T")[0], note: "", amount: "", method: "Cash" });
+    } catch (e) {
+      alert("Failed to save money received.");
+    }
+  };
+
+  const handleSaveGiven = async () => {
+    if (!givenForm.amount || !givenForm.date || !givenForm.name) return;
+    try {
+      const [y, m, d] = givenForm.date.split("-");
+      const formattedDate = `${d}/${m}/${y}`;
+      if (editingGivenMoney) {
+        await onUpdatePersonalGivenMoney({
+          ...editingGivenMoney,
+          date: formattedDate,
+          amount: parseFloat(givenForm.amount),
+          name: givenForm.name,
+          projectName: givenForm.projectName,
+        });
+        alert("Given money updated successfully.");
+      } else {
+        await onAddPersonalGivenMoney({
+          date: formattedDate,
+          amount: parseFloat(givenForm.amount),
+          name: givenForm.name,
+          projectName: givenForm.projectName,
+          createdByEmail: targetEmail || "",
+        });
+        alert("Given money added successfully.");
+      }
+      setShowGivenForm(false);
+      setEditingGivenMoney(null);
+      setGivenForm({ date: new Date().toISOString().split("T")[0], name: "", projectName: "", amount: "" });
+    } catch (e) {
+      alert("Failed to save given money.");
+    }
+  };
+
+  const userPayments = useMemo(() => payments.filter((p) => p.createdByEmail === targetEmail), [payments, targetEmail]);
+  const userExpenses = useMemo(() => projectExpenses.filter((p) => p.createdByEmail === targetEmail), [projectExpenses, targetEmail]);
+  const userCollections = useMemo(() => personalReceivedMoney.filter((c) => c.createdByEmail === targetEmail), [personalReceivedMoney, targetEmail]);
+  const userGiven = useMemo(() => personalGivenMoney.filter((c) => c.createdByEmail === targetEmail), [personalGivenMoney, targetEmail]);
+
+  const userStats = useMemo(() => {
+    const totalCostPayments = userPayments.reduce((sum, p) => sum + p.payment + (p.transport || 0), 0);
+    const totalCostExpenses = userExpenses.reduce((sum, p) => sum + p.materialsCost + p.transportCost + p.othersCost, 0);
+    const totalGiven = userGiven.reduce((sum, g) => sum + g.amount, 0);
+    
+    // Total Cost should include the money given to others as well!
+    const totalCost = totalCostPayments + totalCostExpenses + totalGiven;
+    const totalReceived = userCollections.reduce((sum, c) => sum + c.amount, 0);
+    const inHand = totalReceived - totalCost;
+
+    return { totalReceived, totalCost, inHand };
+  }, [userPayments, userExpenses, userCollections, userGiven]);
+
+  const recentEntries = useMemo(() => {
+    const parseTs = (ts: string) => {
+      const match = ts.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+      return match ? new Date(`${match[3]}-${match[2]}-${match[1]}`).getTime() : 0;
+    };
+    const combined = [
+      ...userPayments.map(p => ({ ...p, type: 'Payment', amount: p.payment + (p.transport || 0), name: p.employeeName })),
+      ...userExpenses.map(p => ({ ...p, type: 'Expense', amount: p.materialsCost + p.transportCost + p.othersCost, name: p.materialsName || 'Expense' }))
+    ].sort((a,b) => parseTs(b.timestamp) - parseTs(a.timestamp)).slice(0, 5);
+    return combined;
+  }, [userPayments, userExpenses]);
+
+  return (
+    <div className="space-y-6 pb-10">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-[#0D47A1] pb-2 gap-4">
+        <div className="flex items-center gap-4">
+          {targetUser?.photoURL && <img src={targetUser.photoURL} className="w-12 h-12 rounded-full border-2 border-blue-100 shadow-sm" alt="Profile" />}
+          <div>
+            <h2 className="text-xl font-bold text-[#FF9900]">{targetUser?.displayName || 'User Profile'}</h2>
+            <p className="text-[10px] text-slate-500 font-medium">{targetEmail}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {(profile?.role === "super_admin" || user?.email === "bijoymahmudmunna@gmail.com") && users.length > 0 && (
+            <select
+              value={viewingEmail || ""}
+              onChange={(e) => {
+                setViewingEmail(e.target.value);
+                setShowReceivedForm(false);
+                setEditingReceivedMoney(null);
+              }}
+              className="text-xs bg-white border border-gray-300 rounded p-1.5 focus:ring-[#0D47A1] focus:border-[#0D47A1]"
+            >
+              <option value="">My Profile</option>
+              {users.map((u) => (
+                <option key={u.uid} value={u.email}>{u.displayName || u.email}</option>
+              ))}
+            </select>
+          )}
+          {(profile?.role === "admin" || profile?.role === "super_admin" || user?.email === "bijoymahmudmunna@gmail.com") && (
+            <button
+              onClick={() => {
+                setEditingGivenMoney(null);
+                setGivenForm({ date: new Date().toISOString().split("T")[0], name: "", projectName: "", amount: "" });
+                setShowGivenForm(!showGivenForm);
+              }}
+              className="flex items-center gap-2 bg-[#D32F2F] text-white px-3 py-1.5 rounded-lg font-bold text-xs shadow hover:bg-red-700 transition-colors"
+            >
+              <TrendingUp className="w-4 h-4 rotate-180" />
+              Given Money
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setEditingReceivedMoney(null);
+              setReceivedForm({ date: new Date().toISOString().split("T")[0], note: "", amount: "", method: "Cash" });
+              setShowReceivedForm(!showReceivedForm);
+            }}
+            className="flex items-center gap-2 bg-[#2E7D32] text-white px-3 py-1.5 rounded-lg font-bold text-xs shadow hover:bg-green-700 transition-colors"
+          >
+            <TrendingUp className="w-4 h-4" />
+            Receive Money
+          </button>
+        </div>
+      </div>
+
+      {showReceivedForm && (
+        <div className="bg-[#F5F9FD] p-4 rounded-xl shadow-inner border border-blue-100 flex flex-col gap-3">
+          <h3 className="text-sm font-bold text-[#0D47A1]">Record Received Money</h3>
+          <input
+            type="date"
+            value={receivedForm.date}
+            onChange={(e) => setReceivedForm({ ...receivedForm, date: e.target.value })}
+            className="w-full text-sm border-gray-300 rounded-lg p-2 focus:ring-[#0D47A1] focus:border-[#0D47A1]"
+          />
+          <input
+            type="text"
+            placeholder="Note (Optional)"
+            value={receivedForm.note}
+            onChange={(e) => setReceivedForm({ ...receivedForm, note: e.target.value })}
+            className="w-full text-sm border-gray-300 rounded-lg p-2 focus:ring-[#0D47A1] focus:border-[#0D47A1]"
+          />
+          <input
+            type="number"
+            placeholder="Amount"
+            value={receivedForm.amount}
+            onChange={(e) => setReceivedForm({ ...receivedForm, amount: e.target.value })}
+            className="w-full text-sm border-gray-300 rounded-lg p-2 focus:ring-[#0D47A1] focus:border-[#0D47A1]"
+          />
+          <select
+            value={receivedForm.method}
+            onChange={(e) => setReceivedForm({ ...receivedForm, method: e.target.value })}
+            className="w-full text-sm border-gray-300 rounded-lg p-2 focus:ring-[#0D47A1] focus:border-[#0D47A1]"
+          >
+            <option value="Cash">Cash</option>
+            <option value="bKash">bKash</option>
+            <option value="Bank">Bank</option>
+            <option value="Others">Others</option>
+          </select>
+          <div className="flex gap-2">
+            <button
+              onClick={handleSaveReceived}
+              disabled={!receivedForm.amount || !receivedForm.date}
+              className="flex-1 bg-[#0D47A1] text-white p-2 rounded-lg font-bold hover:bg-blue-800 transition-colors disabled:opacity-50"
+            >
+              {editingReceivedMoney ? "Update Received Money" : "Save Received Money"}
+            </button>
+            <button
+              onClick={() => {
+                setShowReceivedForm(false);
+                setEditingReceivedMoney(null);
+                setReceivedForm({ date: new Date().toISOString().split("T")[0], note: "", amount: "", method: "Cash" });
+              }}
+              className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors font-bold"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showGivenForm && (
+        <div className="bg-red-50 p-4 rounded-xl shadow-inner border border-red-100 flex flex-col gap-3">
+          <h3 className="text-sm font-bold text-red-800">Record Given Money</h3>
+          <input
+            type="date"
+            value={givenForm.date}
+            onChange={(e) => setGivenForm({ ...givenForm, date: e.target.value })}
+            className="w-full text-sm border-gray-300 rounded-lg p-2 focus:ring-red-600 focus:border-red-600"
+          />
+          <input
+            type="text"
+            placeholder="Name"
+            value={givenForm.name}
+            onChange={(e) => setGivenForm({ ...givenForm, name: e.target.value })}
+            className="w-full text-sm border-gray-300 rounded-lg p-2 focus:ring-red-600 focus:border-red-600"
+          />
+          <input
+            type="text"
+            placeholder="Project (Optional)"
+            value={givenForm.projectName}
+            onChange={(e) => setGivenForm({ ...givenForm, projectName: e.target.value })}
+            className="w-full text-sm border-gray-300 rounded-lg p-2 focus:ring-red-600 focus:border-red-600"
+          />
+          <input
+            type="number"
+            placeholder="Amount"
+            value={givenForm.amount}
+            onChange={(e) => setGivenForm({ ...givenForm, amount: e.target.value })}
+            className="w-full text-sm border-gray-300 rounded-lg p-2 focus:ring-red-600 focus:border-red-600"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={handleSaveGiven}
+              disabled={!givenForm.amount || !givenForm.date || !givenForm.name}
+              className="flex-1 bg-[#D32F2F] text-white p-2 rounded-lg font-bold hover:bg-red-800 transition-colors disabled:opacity-50"
+            >
+              {editingGivenMoney ? "Update Given Money" : "Save Given Money"}
+            </button>
+            <button
+              onClick={() => {
+                setShowGivenForm(false);
+                setEditingGivenMoney(null);
+                setGivenForm({ date: new Date().toISOString().split("T")[0], name: "", projectName: "", amount: "" });
+              }}
+              className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors font-bold"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-blue-100 text-center">
+          <TrendingUp className="w-5 h-5 text-green-500 mx-auto mb-1" />
+          <p className="text-[10px] font-bold text-slate-400 uppercase">Received</p>
+          <p className="text-sm font-black text-slate-800">{formatCurrency(userStats.totalReceived)}</p>
+        </div>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-red-100 text-center">
+          <TrendingUp className="w-5 h-5 text-red-500 mx-auto mb-1 rotate-180" />
+          <p className="text-[10px] font-bold text-slate-400 uppercase">Total Cost</p>
+          <p className="text-sm font-black text-slate-800">{formatCurrency(userStats.totalCost)}</p>
+        </div>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-green-100 text-center">
+          <LayoutDashboard className="w-5 h-5 text-blue-500 mx-auto mb-1" />
+          <p className="text-[10px] font-bold text-slate-400 uppercase">In Hand</p>
+          <p className={`text-sm font-black ${userStats.inHand >= 0 ? "text-green-600" : "text-red-600"}`}>{formatCurrency(userStats.inHand)}</p>
+        </div>
+      </div>
+
       <div className="space-y-4">
-        <h3 className="text-center text-[#0D47A1] font-bold underline">
-          Recent Data
-        </h3>
+        <h3 className="text-sm font-bold text-[#0D47A1] underline">Received Money History</h3>
         <div className="overflow-hidden rounded-lg border border-[#B0BEC5] bg-white">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-[#FFB300] text-white">
+          <table className="w-full text-[10px] text-left">
+            <thead className="bg-[#2E7D32] text-white">
               <tr>
-                <th className="p-2 border-r border-white/20 w-[20%]">Date</th>
-                <th className="p-2 border-r border-white/20 w-[25%]">
-                  Name/Ref
-                </th>
-                <th className="p-2 border-r border-white/20 w-[25%]">
-                  Project
-                </th>
-                {isSuperAdmin && (
-                  <th className="p-2 border-r border-white/20 w-[25%]">
-                    Created By
-                  </th>
-                )}
-                <th className="p-2 border-r border-white/20 w-[15%] text-center">
-                  Type
-                </th>
-                <th className="p-2 w-[15%] text-right">Amount</th>
+                <th className="p-2">Date</th>
+                <th className="p-2">Name</th>
+                <th className="p-2 text-right">Amount</th>
+                <th className="p-2 text-center">By</th>
+                <th className="p-2 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {recentEntries.map((entry, i) => (
-                <tr
-                  key={`${entry.id}-${i}`}
-                  className={i % 2 === 0 ? "bg-white" : "bg-[#F5F9FD]"}
-                >
-                  <td className="p-2 border-r border-[#B0BEC5]/30 whitespace-nowrap">
-                    {entry.timestamp.split(",")[0]}
+              {userCollections.map((m, i) => (
+                <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-green-50/30"}>
+                  <td className="p-2 border-r border-slate-100">{m.date}</td>
+                  <td className="p-2 border-r border-slate-100 truncate max-w-[120px]">{m.note || '-'}</td>
+                  <td className="p-2 font-bold text-right border-r border-slate-100">{formatCurrency(m.amount)}</td>
+                  <td className="p-2 text-center text-slate-500 border-r border-slate-100 max-w-[80px]">{m.method || 'Cash'}</td>
+                  <td className="p-2 text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      <button 
+                        onClick={() => handleEditReceived(m)}
+                        className="text-blue-600 hover:text-blue-800"
+                        title="Edit"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                      <button 
+                        onClick={() => onDeletePersonalReceivedMoney(m.id)}
+                        className="text-red-500 hover:text-red-700"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   </td>
-                  <td className="p-2 border-r border-[#B0BEC5]/30 truncate max-w-[100px]">
-                    {entry.name}
-                  </td>
-                  <td className="p-2 border-r border-[#B0BEC5]/30 truncate max-w-[100px]">
-                    {entry.project}
-                  </td>
-                  {isSuperAdmin && (
-                    <td className="p-2 border-r border-[#B0BEC5]/30 truncate max-w-[100px] text-[10px] text-[#78909C]">
-                      {entry.createdByEmail || "Unknown"}
+                </tr>
+              ))}
+              {userCollections.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="p-4 text-center text-gray-500">No received money records</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {(profile?.role === "admin" || profile?.role === "super_admin" || user?.email === "bijoymahmudmunna@gmail.com") && (
+        <div className="space-y-4">
+          <h3 className="text-sm font-bold text-red-800 underline">Given Money History</h3>
+          <div className="overflow-hidden rounded-lg border border-[#B0BEC5] bg-white">
+            <table className="w-full text-[10px] text-left">
+              <thead className="bg-[#D32F2F] text-white">
+                <tr>
+                  <th className="p-2">Date</th>
+                  <th className="p-2">Name</th>
+                  <th className="p-2">Project</th>
+                  <th className="p-2 text-right">Amount</th>
+                  <th className="p-2 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {userGiven.map((m, i) => (
+                  <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-red-50/30"}>
+                    <td className="p-2 border-r border-slate-100">{m.date}</td>
+                    <td className="p-2 border-r border-slate-100 truncate max-w-[100px]">{m.name || '-'}</td>
+                    <td className="p-2 border-r border-slate-100 truncate max-w-[100px]">{m.projectName || '-'}</td>
+                    <td className="p-2 font-bold text-right border-r border-slate-100">{formatCurrency(m.amount)}</td>
+                    <td className="p-2 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <button 
+                          onClick={() => handleEditGiven(m)}
+                          className="text-blue-600 hover:text-blue-800"
+                          title="Edit"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                        <button 
+                          onClick={() => onDeletePersonalGivenMoney(m.id)}
+                          className="text-red-500 hover:text-red-700"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     </td>
-                  )}
-                  <td className="p-2 border-r border-[#B0BEC5]/30 text-center text-[10px] font-bold text-[#455A64]">
-                    {entry.type === "Emp Payment" ? "Employee" : "Project"}
-                  </td>
-                  <td className="p-2 font-bold text-right text-[#2E7D32]">
-                    {formatCurrency(entry.amount)}
-                  </td>
+                  </tr>
+                ))}
+                {userGiven.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="p-4 text-center text-gray-500">No given money records</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold text-[#0D47A1] underline">My Recent Entries</h3>
+        <div className="overflow-hidden rounded-lg border border-[#B0BEC5] bg-white">
+          <table className="w-full text-[10px] text-left">
+            <thead className="bg-[#0D47A1] text-white">
+              <tr>
+                <th className="p-2">Date</th>
+                <th className="p-2">Name</th>
+                <th className="p-2">Project</th>
+                <th className="p-2 text-right w-[20%]">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentEntries.map((e, i) => (
+                <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-blue-50/30"}>
+                  <td className="p-2 border-r border-slate-100">{e.timestamp.split(',')[0]}</td>
+                  <td className="p-2 border-r border-slate-100 truncate max-w-[100px]">{e.name}</td>
+                  <td className="p-2 border-r border-slate-100 truncate max-w-[100px]">{e.projectName}</td>
+                  <td className="p-2 font-bold text-right pr-4">{formatCurrency(e.amount)}</td>
                 </tr>
               ))}
               {recentEntries.length === 0 && (
                 <tr>
-                  <td colSpan={isSuperAdmin ? 6 : 5} className="p-8 text-center text-[#78909C]">
-                    No data available
-                  </td>
+                  <td colSpan={4} className="p-4 text-center text-gray-500">No recent entries</td>
                 </tr>
               )}
             </tbody>
