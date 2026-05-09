@@ -1130,6 +1130,8 @@ function AppContent() {
       await setDoc(doc(db, "personalGivenMoney", id), {
         ...money,
         id,
+        createdBy: user?.uid,
+        createdByEmail: user?.email || null,
       });
     } catch (error: any) {
       console.error("Error adding personal given money:", error);
@@ -2393,6 +2395,19 @@ function DashboardView({
       .slice(-6);
   }, [payments, projectExpenses]);
 
+  const recentGlobalEntries = useMemo(() => {
+    const parseTs = (ts: string) => {
+      if (!ts) return 0;
+      const match = ts.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+      return match ? new Date(`${match[3]}-${match[2]}-${match[1]}`).getTime() : 0;
+    };
+    const combined = [
+      ...payments.map(p => ({ type: 'Payment', date: p.timestamp ? p.timestamp.split(',')[0] : p.date, amount: p.payment + (p.transport || 0), projectName: p.projectName, name: p.employeeName, timestamp: p.timestamp || p.date })),
+      ...projectExpenses.map(p => ({ type: 'Expense', date: p.timestamp ? p.timestamp.split(',')[0] : p.date, amount: p.materialsCost + p.transportCost + p.othersCost, projectName: p.projectName, name: p.materialsName, timestamp: p.timestamp || p.date }))
+    ].sort((a,b) => parseTs(b.timestamp) - parseTs(a.timestamp)).slice(0, 50); // Show max 50 recent global entries
+    return combined;
+  }, [payments, projectExpenses]);
+
   return (
     <div className="space-y-6 pb-10">
       <h2 className="text-xl font-bold border-b-2 border-[#0D47A1] inline-block pb-1 text-[#FF9900]">
@@ -2437,6 +2452,46 @@ function DashboardView({
           <button onClick={onDetails} className="mt-4 text-[#0D47A1] font-bold text-xs hover:underline cursor-pointer">
             View All Details
           </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl p-4 shadow-lg border border-[#B0BEC5]">
+        <h3 className="text-sm font-bold text-[#0D47A1] mb-4">Recent Global Entries</h3>
+        <div className="overflow-hidden rounded-lg border border-[#B0BEC5] bg-white">
+          <table className="w-full text-[10px] text-left">
+            <thead className="bg-[#0D47A1] text-white">
+              <tr>
+                <th className="p-2">Date</th>
+                <th className="p-2">Name</th>
+                <th className="p-2">Project</th>
+                <th className="p-2 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentGlobalEntries.map((e, i) => (
+                <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-blue-50/30"}>
+                  <td className="p-2 border-r border-slate-100">{e.timestamp.split(',')[0]}</td>
+                  <td className="p-2 border-r border-slate-100 truncate max-w-[80px]">
+                    {e.name || '-'}
+                    <span className={`block text-[8px] mt-0.5 text-slate-500`}>
+                      {e.type}
+                    </span>
+                  </td>
+                  <td className="p-2 border-r border-slate-100 truncate max-w-[80px] text-slate-500">
+                    {e.projectName || '-'}
+                  </td>
+                  <td className="p-2 font-bold text-right text-gray-800">
+                    {formatCurrency(e.amount)}
+                  </td>
+                </tr>
+              ))}
+              {recentGlobalEntries.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="p-4 text-center text-gray-500">No recent entries</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -2664,15 +2719,18 @@ function ProfileDashboardView({
 
   const recentEntries = useMemo(() => {
     const parseTs = (ts: string) => {
+      if (!ts) return 0;
       const match = ts.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
       return match ? new Date(`${match[3]}-${match[2]}-${match[1]}`).getTime() : 0;
     };
     const combined = [
-      ...userPayments.map(p => ({ ...p, type: 'Payment', amount: p.payment + (p.transport || 0), name: p.employeeName })),
-      ...userExpenses.map(p => ({ ...p, type: 'Expense', amount: p.materialsCost + p.transportCost + p.othersCost, name: p.materialsName || 'Expense' }))
-    ].sort((a,b) => parseTs(b.timestamp) - parseTs(a.timestamp)).slice(0, 5);
+      ...userPayments.map(p => ({ ...p, type: 'Payment', amount: p.payment + (p.transport || 0), name: p.employeeName, timestamp: p.timestamp || p.date })),
+      ...userExpenses.map(p => ({ ...p, type: 'Expense', amount: p.materialsCost + p.transportCost + p.othersCost, name: p.materialsName || 'Expense', timestamp: p.timestamp || p.date })),
+      ...userCollections.map(p => ({ ...p, type: 'Received', amount: p.amount, name: p.method || 'Cash', timestamp: p.date })),
+      ...userGiven.map(p => ({ ...p, type: 'Given', amount: p.amount, name: p.name, timestamp: p.date }))
+    ].sort((a,b) => parseTs(b.timestamp) - parseTs(a.timestamp));
     return combined;
-  }, [userPayments, userExpenses]);
+  }, [userPayments, userExpenses, userCollections, userGiven]);
 
   return (
     <div className="space-y-6 pb-10">
@@ -7372,6 +7430,71 @@ const generateBillPDF = async (
     }
   });
 
+  const hasAdvance = bill.type === "BILL" && (bill.advance || 0) > 0;
+  const hasDiscount = bill.type === "QUOTATION" && (bill.discount || 0) > 0;
+  
+  const footData = [];
+  if (hasAdvance || hasDiscount) {
+    const isBill = bill.type === "BILL";
+    const deductionLabel = isBill ? "Advance" : "Discount";
+    const deductionAmount = isBill ? (bill.advance || 0) : (bill.discount || 0);
+    const finalLabel = isBill ? "Due" : "Grand Total";
+    const netTotal = bill.grandTotal - deductionAmount;
+    
+    footData.push([
+      {
+        content: `In word: ${bill.totalInWords}`,
+        rowSpan: 3,
+        colSpan: columns.length - 2,
+        styles: { fontStyle: "bold", font: settings.fontStyle, valign: "middle" },
+      },
+      {
+        content: "Sub Total",
+        styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle },
+      },
+      {
+        content: `Tk. ${bill.grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
+        styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle },
+      }
+    ]);
+    footData.push([
+      {
+        content: deductionLabel,
+        styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle },
+      },
+      {
+        content: `Tk. ${deductionAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
+        styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle },
+      }
+    ]);
+    footData.push([
+      {
+        content: finalLabel,
+        styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle },
+      },
+      {
+        content: `Tk. ${netTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
+        styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle, fillColor: [240, 240, 240] },
+      }
+    ]);
+  } else {
+    footData.push([
+      {
+        content: `In word: ${bill.totalInWords}`,
+        colSpan: columns.length - 1,
+        styles: { fontStyle: "bold", font: settings.fontStyle },
+      },
+      {
+        content: `Tk. ${bill.grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
+        styles: {
+          fontStyle: "bold",
+          halign: "right",
+          font: settings.fontStyle,
+        },
+      },
+    ]);
+  }
+
   autoTable(doc, {
     startY: 61,
     margin: { top: 40, bottom: 20 },
@@ -7394,23 +7517,7 @@ const generateBillPDF = async (
       textColor: [40, 40, 40],
     },
     columnStyles: columnStyles,
-    foot: [
-      [
-        {
-          content: `In word: ${bill.totalInWords}`,
-          colSpan: columns.length - 1,
-          styles: { fontStyle: "bold", font: settings.fontStyle },
-        },
-        {
-          content: `Tk. ${bill.grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
-          styles: {
-            fontStyle: "bold",
-            halign: "right",
-            font: settings.fontStyle,
-          },
-        },
-      ],
-    ],
+    foot: footData,
     footStyles: {
       fillColor: [255, 255, 255],
       textColor: [0, 0, 0],
@@ -7912,6 +8019,9 @@ function BillView({
         ? "1. Payment should be made within 7 days.\n2. 50% advance required."
         : ""),
   );
+  
+  const [advance, setAdvance] = useState<number>(initialBill?.advance || 0);
+  const [discount, setDiscount] = useState<number>(initialBill?.discount || 0);
 
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [currentPdfPage, setCurrentPdfPage] = useState<number>(1);
@@ -7960,6 +8070,7 @@ function BillView({
   }, []);
 
   const grandTotal = items.reduce((sum, item) => sum + item.total, 0);
+  const netTotal = type === "BILL" ? Math.max(0, grandTotal - advance) : Math.max(0, grandTotal - discount);
 
   useEffect(() => {
     let active = true;
@@ -7973,8 +8084,10 @@ function BillView({
         site: site || "Preview Site",
         subject: subject || "Preview Subject",
         items,
-        totalInWords: numberToWords(grandTotal),
+        totalInWords: numberToWords(netTotal),
         grandTotal,
+        advance: type === "BILL" ? advance : undefined,
+        discount: type === "QUOTATION" ? discount : undefined,
         preparedBy: preparedBy || "Preview Signatory",
         signature: signature || null,
         termsAndConditions: terms,
@@ -8015,6 +8128,8 @@ function BillView({
     subject,
     items,
     grandTotal,
+    advance,
+    discount,
     preparedBy,
     signature,
     terms,
@@ -8092,8 +8207,10 @@ function BillView({
       site,
       subject,
       items,
-      totalInWords: numberToWords(grandTotal),
+      totalInWords: numberToWords(netTotal),
       grandTotal,
+      advance: type === "BILL" ? advance : undefined,
+      discount: type === "QUOTATION" ? discount : undefined,
       preparedBy,
       signature: signature || null,
       termsAndConditions: terms,
@@ -8357,14 +8474,45 @@ function BillView({
             </div>
           </div>
 
-          <div className="pt-4 border-t border-[#B0BEC5] flex justify-between items-center gap-2">
-            <div className="px-3 py-2 bg-[#E8F5E9] text-[#2E7D32] rounded-lg font-bold text-xs sm:text-sm">
-              Grand Total: Tk. {grandTotal.toLocaleString()}
+          <div className="pt-4 border-t border-[#B0BEC5] flex justify-between items-end gap-2 flex-wrap">
+            <div className="flex flex-col gap-2">
+              <div className="px-3 py-1.5 bg-slate-100 text-slate-800 rounded-lg font-bold text-xs sm:text-sm border border-slate-200">
+                Sub Total: Tk. {grandTotal.toLocaleString()}
+              </div>
+              
+              {type === "BILL" ? (
+                <div className="flex items-center gap-2">
+                  <label className="text-xs sm:text-sm font-bold text-slate-600 w-16">Advance:</label>
+                  <input
+                    type="number"
+                    value={advance || ""}
+                    onChange={(e) => setAdvance(parseFloat(e.target.value) || 0)}
+                    className="w-24 p-1.5 border border-[#B0BEC5] rounded text-xs"
+                    placeholder="Tk."
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <label className="text-xs sm:text-sm font-bold text-slate-600 w-16">Discount:</label>
+                  <input
+                    type="number"
+                    value={discount || ""}
+                    onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                    className="w-24 p-1.5 border border-[#B0BEC5] rounded text-xs"
+                    placeholder="Tk."
+                  />
+                </div>
+              )}
+
+              <div className="px-3 py-1.5 bg-[#E8F5E9] text-[#2E7D32] rounded-lg font-bold text-xs sm:text-sm border border-green-200 mt-1">
+                {type === "BILL" ? "Due" : "Total"}: Tk. {netTotal.toLocaleString()}
+              </div>
             </div>
-            <div className="flex gap-2">
+            
+            <div className="flex gap-2 mb-1">
               <button
                 onClick={handleSave}
-                className="px-3 py-2 bg-[#0D47A1] text-white rounded-lg font-bold hover:bg-[#1565C0] transition-all text-[10px] sm:text-sm"
+                className="px-4 py-2 bg-[#0D47A1] text-white rounded-lg font-bold hover:bg-[#1565C0] transition-all text-xs sm:text-sm whitespace-nowrap shadow"
               >
                 {initialBill ? "Update" : "Submit"}{" "}
                 {type === "BILL" ? "Bill" : "Quotation"}
@@ -8535,8 +8683,17 @@ function BillHistoryView({
               </div>
               <div className="text-right">
                 <p className="font-bold text-[#2E7D32]">
-                  {bill.grandTotal.toLocaleString()}
+                  {bill.type === "BILL" && (bill.advance || 0) > 0
+                    ? Math.max(0, bill.grandTotal - (bill.advance || 0)).toLocaleString() 
+                    : bill.type === "QUOTATION" && (bill.discount || 0) > 0
+                    ? Math.max(0, bill.grandTotal - (bill.discount || 0)).toLocaleString() 
+                    : bill.grandTotal.toLocaleString()}
                 </p>
+                {((bill.advance || 0) > 0 || (bill.discount || 0) > 0) && (
+                  <p className="text-[10px] text-slate-500">
+                    {bill.type === "BILL" ? "Due" : "Total"}
+                  </p>
+                )}
               </div>
             </div>
 

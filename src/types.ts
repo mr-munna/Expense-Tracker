@@ -53,6 +53,8 @@ export interface Bill {
   items: BillItem[];
   totalInWords: string;
   grandTotal: number;
+  advance?: number;
+  discount?: number;
   preparedBy: string;
   signature?: string;
   termsAndConditions?: string;

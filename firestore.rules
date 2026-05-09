@@ -125,13 +125,13 @@ service cloud.firestore {
     match /personalReceivedMoney/{id} {
       allow read: if isMember();
       allow create: if isMember();
-      allow update, delete: if isAdmin() || (isMember() && resource.data.createdBy == request.auth.uid);
+      allow update, delete: if isAdmin() || (isMember() && (!("createdBy" in resource.data) || resource.data.createdBy == request.auth.uid));
     }
 
     match /personalGivenMoney/{id} {
       allow read: if isMember();
       allow create: if isMember();
-      allow update, delete: if isAdmin() || (isMember() && resource.data.createdBy == request.auth.uid);
+      allow update, delete: if isAdmin() || (isMember() && (!("createdBy" in resource.data) || resource.data.createdBy == request.auth.uid));
     }
 
     match /project_list/{id} {
