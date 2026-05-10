@@ -2326,7 +2326,7 @@ function DashboardView({
   projectExpenses: ProjectExpense[];
   onDetails: () => void;
 }) {
-  const { isSuperAdmin } = useAuth();
+  const { isSuperAdmin, profile, user } = useAuth();
   const COLORS = ["#0D47A1", "#2E7D32", "#FFB300", "#ED7D31", "#7B1FA2", "#00897B"];
 
   const projectTotals = useMemo(() => {
@@ -2404,7 +2404,7 @@ function DashboardView({
     const combined = [
       ...payments.map(p => ({ type: 'Payment', date: p.timestamp ? p.timestamp.split(',')[0] : p.date, amount: p.payment + (p.transport || 0), projectName: p.projectName, name: p.employeeName, timestamp: p.timestamp || p.date })),
       ...projectExpenses.map(p => ({ type: 'Expense', date: p.timestamp ? p.timestamp.split(',')[0] : p.date, amount: p.materialsCost + p.transportCost + p.othersCost, projectName: p.projectName, name: p.materialsName, timestamp: p.timestamp || p.date }))
-    ].sort((a,b) => parseTs(b.timestamp) - parseTs(a.timestamp)).slice(0, 50); // Show max 50 recent global entries
+    ].sort((a,b) => parseTs(b.timestamp) - parseTs(a.timestamp)).slice(0, 10); // Show max 10 recent global entries
     return combined;
   }, [payments, projectExpenses]);
 
@@ -2414,86 +2414,48 @@ function DashboardView({
         Global Dashboard
       </h2>
 
-      <div className="grid grid-cols-1 gap-4">
-        <div className="bg-white rounded-2xl p-6 shadow-xl border border-[#B0BEC5] text-center relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-[#0D47A1]/10" />
-          <p className="text-[#FF9900] font-bold mb-2 flex items-center justify-center gap-2">
-            ---------- Total Global Expense ----------
-          </p>
-          <h3 className="text-3xl font-bold text-[#2E7D32] mb-4">
-            {formatCurrency(stats.totalExpense)}
-          </h3>
-          <div className="grid grid-cols-2 gap-4 border-t border-[#B0BEC5]/30 pt-4">
-            <div className="text-left">
-              <p className="text-[10px] text-[#78909C] font-bold uppercase">Employee Cost</p>
-              <p className="text-sm font-bold text-[#1A237E]">{formatCurrency(stats.employeeCost)}</p>
+      {(profile?.role === "admin" || profile?.role === "super_admin" || user?.email === "bijoymahmudmunna@gmail.com") && (
+        <div className="grid grid-cols-1 gap-4">
+          <div className="bg-white rounded-2xl p-6 shadow-xl border border-[#B0BEC5] text-center relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-[#0D47A1]/10" />
+            <p className="text-[#FF9900] font-bold mb-2 flex items-center justify-center gap-2">
+              ---------- Total Global Expense ----------
+            </p>
+            <h3 className="text-3xl font-bold text-[#2E7D32] mb-4">
+              {formatCurrency(stats.totalExpense)}
+            </h3>
+            <div className="grid grid-cols-2 gap-4 border-t border-[#B0BEC5]/30 pt-4">
+              <div className="text-left">
+                <p className="text-[10px] text-[#78909C] font-bold uppercase">Employee Cost</p>
+                <p className="text-sm font-bold text-[#1A237E]">{formatCurrency(stats.employeeCost)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] text-[#78909C] font-bold uppercase">Materials Cost</p>
+                <p className="text-sm font-bold text-[#1A237E]">{formatCurrency(stats.materialsCost)}</p>
+              </div>
             </div>
-            <div className="text-right">
-              <p className="text-[10px] text-[#78909C] font-bold uppercase">Materials Cost</p>
-              <p className="text-sm font-bold text-[#1A237E]">{formatCurrency(stats.materialsCost)}</p>
+
+            <div className="mt-6">
+              <div className="overflow-hidden rounded-lg border border-[#B0BEC5]/30">
+                <table className="w-full text-[10px] text-left">
+                  <tbody>
+                    {projectTotals.map((p, i) => (
+                      <tr key={p.name} className={i % 2 === 0 ? "bg-white" : "bg-[#F5F9FD]"}>
+                        <td className="p-1.5 border-r border-[#B0BEC5]/20 truncate max-w-[120px]">{p.name}</td>
+                        <td className="p-1.5 font-bold text-right">{formatCurrency(p.cost)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
+
+            <button onClick={onDetails} className="mt-4 text-[#0D47A1] font-bold text-xs hover:underline cursor-pointer">
+              View All Details
+            </button>
           </div>
-
-          <div className="mt-6">
-            <div className="overflow-hidden rounded-lg border border-[#B0BEC5]/30">
-              <table className="w-full text-[10px] text-left">
-                <tbody>
-                  {projectTotals.map((p, i) => (
-                    <tr key={p.name} className={i % 2 === 0 ? "bg-white" : "bg-[#F5F9FD]"}>
-                      <td className="p-1.5 border-r border-[#B0BEC5]/20 truncate max-w-[120px]">{p.name}</td>
-                      <td className="p-1.5 font-bold text-right">{formatCurrency(p.cost)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <button onClick={onDetails} className="mt-4 text-[#0D47A1] font-bold text-xs hover:underline cursor-pointer">
-            View All Details
-          </button>
         </div>
-      </div>
-
-      <div className="bg-white rounded-2xl p-4 shadow-lg border border-[#B0BEC5]">
-        <h3 className="text-sm font-bold text-[#0D47A1] mb-4">Recent Global Entries</h3>
-        <div className="overflow-hidden rounded-lg border border-[#B0BEC5] bg-white">
-          <table className="w-full text-[10px] text-left">
-            <thead className="bg-[#0D47A1] text-white">
-              <tr>
-                <th className="p-2">Date</th>
-                <th className="p-2">Name</th>
-                <th className="p-2">Project</th>
-                <th className="p-2 text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentGlobalEntries.map((e, i) => (
-                <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-blue-50/30"}>
-                  <td className="p-2 border-r border-slate-100">{e.timestamp.split(',')[0]}</td>
-                  <td className="p-2 border-r border-slate-100 truncate max-w-[80px]">
-                    {e.name || '-'}
-                    <span className={`block text-[8px] mt-0.5 text-slate-500`}>
-                      {e.type}
-                    </span>
-                  </td>
-                  <td className="p-2 border-r border-slate-100 truncate max-w-[80px] text-slate-500">
-                    {e.projectName || '-'}
-                  </td>
-                  <td className="p-2 font-bold text-right text-gray-800">
-                    {formatCurrency(e.amount)}
-                  </td>
-                </tr>
-              ))}
-              {recentGlobalEntries.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="p-4 text-center text-gray-500">No recent entries</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6">
         <div className="bg-white rounded-2xl p-4 shadow-lg border border-[#B0BEC5]">
@@ -2539,6 +2501,47 @@ function DashboardView({
           </div>
         </div>
       </div>
+
+      <div className="bg-white rounded-2xl p-4 shadow-lg border border-[#B0BEC5]">
+        <h3 className="text-sm font-bold text-[#0D47A1] mb-4">Recent Global Entries</h3>
+        <div className="overflow-hidden rounded-lg border border-[#B0BEC5] bg-white">
+          <table className="w-full text-[10px] text-left">
+            <thead className="bg-[#0D47A1] text-white">
+              <tr>
+                <th className="p-2">Date</th>
+                <th className="p-2">Name</th>
+                <th className="p-2">Project</th>
+                <th className="p-2 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentGlobalEntries.map((e, i) => (
+                <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-blue-50/30"}>
+                  <td className="p-2 border-r border-slate-100">{e.timestamp.split(',')[0]}</td>
+                  <td className="p-2 border-r border-slate-100 truncate max-w-[80px]">
+                    {e.name || '-'}
+                    <span className={`block text-[8px] mt-0.5 text-slate-500`}>
+                      {e.type}
+                    </span>
+                  </td>
+                  <td className="p-2 border-r border-slate-100 truncate max-w-[80px] text-slate-500">
+                    {e.projectName || '-'}
+                  </td>
+                  <td className="p-2 font-bold text-right text-gray-800">
+                    {formatCurrency(e.amount)}
+                  </td>
+                </tr>
+              ))}
+              {recentGlobalEntries.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="p-4 text-center text-gray-500">No recent entries</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
   );
 }
