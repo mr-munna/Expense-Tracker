@@ -2251,13 +2251,6 @@ function AppContent() {
             color="#0D47A1"
           />
         )}
-        <NavButton
-          active={currentView === "PROFILE"}
-          onClick={() => setCurrentView("PROFILE")}
-          icon={<User className="w-5 h-5" />}
-          label="PROFILE"
-          color="#FF9900"
-        />
         {hasPermission("projects", "view") && (
           <NavButton
             active={currentView === "PROJECT_SUMMARY"}
@@ -2276,6 +2269,13 @@ function AppContent() {
             color="#00897B"
           />
         )}
+        <NavButton
+          active={currentView === "PROFILE"}
+          onClick={() => setCurrentView("PROFILE")}
+          icon={<User className="w-5 h-5" />}
+          label="PROFILE"
+          color="#FF9900"
+        />
       </nav>
     </div>
   );
