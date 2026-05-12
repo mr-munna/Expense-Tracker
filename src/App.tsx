@@ -1638,7 +1638,7 @@ function AppContent() {
                 } else {
                   await setDoc(doc(db, "bills", bill.id), {
                     ...bill,
-                    createdBy: user?.uid,
+                    createdBy: user?.uid || null,
                     createdByEmail: user?.email || null,
                   });
                 }
@@ -1681,7 +1681,7 @@ function AppContent() {
                 } else {
                   await setDoc(doc(db, "quotations", bill.id), {
                     ...bill,
-                    createdBy: user?.uid,
+                    createdBy: user?.uid || null,
                     createdByEmail: user?.email || null,
                   });
                 }
@@ -8212,8 +8212,8 @@ function BillView({
       items,
       totalInWords: numberToWords(netTotal),
       grandTotal,
-      advance: type === "BILL" ? advance : undefined,
-      discount: type === "QUOTATION" ? discount : undefined,
+      advance: type === "BILL" ? (advance || 0) : 0,
+      discount: type === "QUOTATION" ? (discount || 0) : 0,
       preparedBy,
       signature: signature || null,
       termsAndConditions: terms,
