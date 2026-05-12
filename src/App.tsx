@@ -7573,6 +7573,10 @@ const generateBillPDF = async (
     }
   }
 
+  doc.setFont(settings.fontStyle, "bold");
+  doc.text(bill.preparedBy || "", signatureCenterX, finalY + 42, { align: "center" });
+  doc.setFont(settings.fontStyle, "normal");
+
   // Terms & Conditions
   if (bill.termsAndConditions) {
     doc.setFontSize(9);
