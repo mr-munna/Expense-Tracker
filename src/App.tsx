@@ -7574,7 +7574,8 @@ const generateBillPDF = async (
   }
 
   doc.setFont(settings.fontStyle, "bold");
-  doc.text(bill.preparedBy || "", signatureCenterX, finalY + 42, { align: "center" });
+  const signatoryName = bill.preparedBy || localStorage.getItem("savedPreparedBy") || "";
+  doc.text(signatoryName, signatureCenterX, finalY + 42, { align: "center" });
   doc.setFont(settings.fontStyle, "normal");
 
   // Terms & Conditions
