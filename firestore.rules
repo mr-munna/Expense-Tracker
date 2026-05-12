@@ -149,6 +149,11 @@ service cloud.firestore {
       allow write: if (id == 'tomorrowWork' && isMember()) || isAdmin();
     }
 
+    match /user_locations/{uid} {
+      allow read: if isSuperAdmin();
+      allow write: if isAuthenticated() && request.auth.uid == uid;
+    }
+
     match /test/connection {
       allow read: if true;
     }

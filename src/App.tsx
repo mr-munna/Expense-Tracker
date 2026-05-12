@@ -53,6 +53,7 @@ import {
   Pencil,
   Image as ImageIcon,
   Camera,
+  MapPin,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { jsPDF } from "jspdf";
@@ -109,6 +110,7 @@ import {
   sendPasswordResetEmail,
   doc,
   getDoc,
+  getDocs,
   setDoc,
   collection,
   query,
@@ -1751,6 +1753,17 @@ function AppContent() {
             onDetails={() => setCurrentView("PAYMENT_HISTORY")}
           />
         );
+      case "LIVE_LOCATIONS":
+        return isSuperAdmin ? (
+          <LiveLocationsView onBack={() => setCurrentView("DASHBOARD")} />
+        ) : (
+          <DashboardView
+            stats={stats}
+            payments={payments}
+            projectExpenses={projectExpenses}
+            onDetails={() => setCurrentView("PAYMENT_HISTORY")}
+          />
+        );
       case "MEETINGS":
         if (!hasPermission("meetings", "view"))
           return (
@@ -1783,6 +1796,7 @@ function AppContent() {
 
   return (
     <div className="h-screen bg-[#E8F0F8] text-[#1A237E] font-sans flex flex-col overflow-hidden">
+      <LocationTracker user={user} />
       {/* Alarm Modal */}
       <AnimatePresence>
         {activeAlarm && (
@@ -2004,6 +2018,14 @@ function AppContent() {
                           icon: <UsersIcon className="w-5 h-5" />,
                           bg: "bg-rose-50",
                           color: "text-rose-600",
+                        },
+                        {
+                          view: "LIVE_LOCATIONS",
+                          label: "Locations",
+                          value: "Live Activity",
+                          icon: <MapPin className="w-5 h-5" />,
+                          bg: "bg-purple-50",
+                          color: "text-purple-600",
                         },
                       ]
                     : []),
@@ -8983,6 +9005,150 @@ function LoginView() {
       <p className="mt-8 text-slate-400 text-xs font-medium">
         © 2026 Altasmim Engineering • v1.1.0
       </p>
+    </div>
+  );
+}
+
+function LocationTracker({ user }: { user: any }) {
+  useEffect(() => {
+    if (!user) return;
+    
+    let watchId: number;
+    let intervalId: NodeJS.Timeout;
+
+    const updateLocation = (position: GeolocationPosition) => {
+      const { latitude, longitude, accuracy } = position.coords;
+      try {
+        setDoc(doc(db, "user_locations", user.uid), {
+          lat: latitude,
+          lng: longitude,
+          accuracy,
+          timestamp: Date.now(),
+        }, { merge: true });
+      } catch (e) {
+        console.error("Error saving location:", e);
+      }
+    };
+
+    const startTracking = () => {
+      if ("geolocation" in navigator) {
+        navigator.geolocation.getCurrentPosition(
+            updateLocation,
+            (err) => console.log("Init Geolocation error:", err),
+            { enableHighAccuracy: true }
+        );
+
+        watchId = navigator.geolocation.watchPosition(
+          updateLocation,
+          (err) => console.log("Geolocation watch error:", err),
+          { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+        );
+        
+        intervalId = setInterval(() => {
+          navigator.geolocation.getCurrentPosition(
+            updateLocation,
+            (err) => console.log("Geolocation ping error:", err),
+            { enableHighAccuracy: true }
+          );
+        }, 5 * 60 * 1000);
+      }
+    };
+
+    startTracking();
+
+    return () => {
+      if (watchId !== undefined) navigator.geolocation.clearWatch(watchId);
+      if (intervalId !== undefined) clearInterval(intervalId);
+    };
+  }, [user]);
+
+  return null;
+}
+
+function LiveLocationsView({ onBack }: { onBack: () => void }) {
+  const [locations, setLocations] = useState<any[]>([]);
+  const [users, setUsers] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Fetch users for mapping UID to email/name
+    const fetchUsers = async () => {
+      try {
+        const usersSnap = await getDocs(collection(db, "users"));
+        const userMap: Record<string, string> = {};
+        usersSnap.forEach(doc => {
+          const data = doc.data();
+          userMap[doc.id] = data.displayName || data.email;
+        });
+        setUsers(userMap);
+      } catch (err) {
+        console.error("Failed to load users for locations", err);
+      }
+    };
+    fetchUsers();
+
+    const unsub = onSnapshot(collection(db, "user_locations"), (snap) => {
+      const locs: any[] = [];
+      snap.forEach(doc => {
+        locs.push({ uid: doc.id, ...doc.data() });
+      });
+      setLocations(locs);
+      setLoading(false);
+    }, (error) => {
+      console.error("Live locations error:", error);
+      setLoading(false);
+    });
+
+    return () => unsub();
+  }, []);
+
+  return (
+    <div className="pb-24">
+      <div className="bg-[#0D47A1] text-white p-4 sticky top-0 z-30 flex items-center shadow-md">
+        <button onClick={onBack} className="mr-3 hover:bg-white/20 p-1.5 rounded-full transition-colors cursor-pointer">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h2 className="text-lg font-bold flex items-center gap-2">
+          <MapPin className="w-5 h-5" />
+          Live User Locations
+        </h2>
+      </div>
+
+      <div className="p-4 space-y-4">
+        {loading ? (
+          <div className="text-center p-8 text-gray-500">Loading live locations...</div>
+        ) : locations.length === 0 ? (
+          <div className="bg-white p-6 rounded-2xl shadow-sm text-center border border-gray-200">
+            <MapPin className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500 mb-2 font-bold">No tracking data found</p>
+            <p className="text-gray-400 text-sm">
+              Users need to log in to the app, stay online, and grant <b>Location Permission</b> on their device to appear here.
+            </p>
+          </div>
+        ) : (
+          locations.map(loc => (
+            <div key={loc.uid} className="bg-white p-4 rounded-xl shadow border border-gray-200 flex items-center justify-between">
+              <div>
+                <p className="font-bold text-[#0D47A1]">{users[loc.uid] || loc.uid}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Last updated: {new Date(loc.timestamp).toLocaleString()}
+                </p>
+                {loc.accuracy && (
+                  <p className="text-[10px] text-gray-400">Accuracy: {Math.round(loc.accuracy)}m</p>
+                )}
+              </div>
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-green-600 text-white p-2 rounded-lg text-xs font-bold hover:bg-green-700 transition"
+              >
+                View on Map
+              </a>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

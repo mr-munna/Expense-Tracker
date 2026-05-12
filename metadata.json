@@ -1,6 +1,6 @@
 {
   "name": "Altasmim Project Tracker",
   "description": "Professional project tracking application with employee payment management, photo categorization, structured billing, and custom export capabilities.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["geolocation", "camera"],
   "majorCapabilities": []
 }
