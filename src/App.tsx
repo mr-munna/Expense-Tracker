@@ -8003,21 +8003,37 @@ function BillView({
   const billNumber = initialBill
     ? initialBill.billNumber
     : `AE-${type === "BILL" ? "B" : "Q"}-${nextNumber.toString().padStart(4, "0")}`;
-  const [recipientName, setRecipientName] = useState(
-    initialBill?.recipientName || "",
-  );
-  const [site, setSite] = useState(initialBill?.site || "");
-  const [subject, setSubject] = useState(
-    initialBill?.subject ||
-      (type === "BILL"
-        ? "Bill for tiles installation work."
-        : "Quotation for tiles installation work."),
-  );
-  const [date, setDate] = useState(
-    initialBill?.date || new Date().toISOString().split("T")[0],
-  );
-  const [items, setItems] = useState<BillItem[]>(
-    initialBill?.items || [
+  const [recipientName, setRecipientName] = useState(() => {
+    if (initialBill) return initialBill.recipientName;
+    return localStorage.getItem(`draft_${type}_recipientName`) || "";
+  });
+  const [site, setSite] = useState(() => {
+    if (initialBill) return initialBill.site || "";
+    return localStorage.getItem(`draft_${type}_site`) || "";
+  });
+  const [subject, setSubject] = useState(() => {
+    if (initialBill) return initialBill.subject || "";
+    const saved = localStorage.getItem(`draft_${type}_subject`);
+    if (saved !== null) return saved;
+    return type === "BILL"
+      ? "Bill for tiles installation work."
+      : "Quotation for tiles installation work.";
+  });
+  const [date, setDate] = useState(() => {
+    if (initialBill) return initialBill.date;
+    return localStorage.getItem(`draft_${type}_date`) || new Date().toISOString().split("T")[0];
+  });
+  const [items, setItems] = useState<BillItem[]>(() => {
+    if (initialBill) return initialBill.items;
+    try {
+      const saved = localStorage.getItem(`draft_${type}_items`);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error("Error loading draft items:", e);
+    }
+    return [
       {
         id: generateId(),
         areaName: "",
@@ -8027,31 +8043,108 @@ function BillView({
         price: 0,
         total: 0,
       },
-    ],
-  );
-  const [preparedBy, setPreparedBy] = useState(
-    initialBill?.preparedBy ||
+    ];
+  });
+  const [preparedBy, setPreparedBy] = useState(() => {
+    if (initialBill) return initialBill.preparedBy || "";
+    return localStorage.getItem(`draft_${type}_preparedBy`) ||
       localStorage.getItem("savedPreparedBy") ||
-      "Md Shahiduzzaman Anik",
-  );
-  const [signature, setSignature] = useState<string | undefined>(
-    initialBill?.signature ||
+      "Md Shahiduzzaman Anik";
+  });
+  const [signature, setSignature] = useState<string | undefined>(() => {
+    if (initialBill) return initialBill.signature;
+    return localStorage.getItem(`draft_${type}_signature`) ||
       localStorage.getItem("savedSignature") ||
-      undefined,
-  );
+      undefined;
+  });
 
   useEffect(() => {
     localStorage.setItem("savedPreparedBy", preparedBy);
   }, [preparedBy]);
-  const [terms, setTerms] = useState(
-    initialBill?.termsAndConditions ||
-      (type === "QUOTATION"
-        ? "1. Payment should be made within 7 days.\n2. 50% advance required."
-        : ""),
-  );
+
+  const [terms, setTerms] = useState(() => {
+    if (initialBill) return initialBill.termsAndConditions || "";
+    const saved = localStorage.getItem(`draft_${type}_terms`);
+    if (saved !== null) return saved;
+    return type === "QUOTATION"
+      ? "1. Payment should be made within 7 days.\n2. 50% advance required."
+      : "";
+  });
   
-  const [advance, setAdvance] = useState<number>(initialBill?.advance || 0);
-  const [discount, setDiscount] = useState<number>(initialBill?.discount || 0);
+  const [advance, setAdvance] = useState<number>(() => {
+    if (initialBill) return initialBill.advance || 0;
+    const saved = localStorage.getItem(`draft_${type}_advance`);
+    return saved ? parseFloat(saved) : 0;
+  });
+  const [discount, setDiscount] = useState<number>(() => {
+    if (initialBill) return initialBill.discount || 0;
+    const saved = localStorage.getItem(`draft_${type}_discount`);
+    return saved ? parseFloat(saved) : 0;
+  });
+
+  useEffect(() => {
+    if (!initialBill) {
+      localStorage.setItem(`draft_${type}_recipientName`, recipientName);
+    }
+  }, [recipientName, type, initialBill]);
+
+  useEffect(() => {
+    if (!initialBill) {
+      localStorage.setItem(`draft_${type}_site`, site);
+    }
+  }, [site, type, initialBill]);
+
+  useEffect(() => {
+    if (!initialBill) {
+      localStorage.setItem(`draft_${type}_subject`, subject);
+    }
+  }, [subject, type, initialBill]);
+
+  useEffect(() => {
+    if (!initialBill) {
+      localStorage.setItem(`draft_${type}_date`, date);
+    }
+  }, [date, type, initialBill]);
+
+  useEffect(() => {
+    if (!initialBill) {
+      localStorage.setItem(`draft_${type}_items`, JSON.stringify(items));
+    }
+  }, [items, type, initialBill]);
+
+  useEffect(() => {
+    if (!initialBill) {
+      localStorage.setItem(`draft_${type}_preparedBy`, preparedBy);
+    }
+  }, [preparedBy, type, initialBill]);
+
+  useEffect(() => {
+    if (!initialBill) {
+      if (signature) {
+        localStorage.setItem(`draft_${type}_signature`, signature);
+      } else {
+        localStorage.removeItem(`draft_${type}_signature`);
+      }
+    }
+  }, [signature, type, initialBill]);
+
+  useEffect(() => {
+    if (!initialBill) {
+      localStorage.setItem(`draft_${type}_terms`, terms);
+    }
+  }, [terms, type, initialBill]);
+
+  useEffect(() => {
+    if (!initialBill) {
+      localStorage.setItem(`draft_${type}_advance`, advance.toString());
+    }
+  }, [advance, type, initialBill]);
+
+  useEffect(() => {
+    if (!initialBill) {
+      localStorage.setItem(`draft_${type}_discount`, discount.toString());
+    }
+  }, [discount, type, initialBill]);
 
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [currentPdfPage, setCurrentPdfPage] = useState<number>(1);
@@ -8254,6 +8347,20 @@ function BillView({
       await onSave(newBill);
       // Automatically download PDF on save
       await generateBillPDF(newBill, "download", pdfSettings);
+      
+      // Clear drafts for this type
+      if (!initialBill) {
+        localStorage.removeItem(`draft_${type}_recipientName`);
+        localStorage.removeItem(`draft_${type}_site`);
+        localStorage.removeItem(`draft_${type}_subject`);
+        localStorage.removeItem(`draft_${type}_date`);
+        localStorage.removeItem(`draft_${type}_items`);
+        localStorage.removeItem(`draft_${type}_preparedBy`);
+        localStorage.removeItem(`draft_${type}_signature`);
+        localStorage.removeItem(`draft_${type}_terms`);
+        localStorage.removeItem(`draft_${type}_advance`);
+        localStorage.removeItem(`draft_${type}_discount`);
+      }
     } catch (error) {
       console.error("Error in save sequence:", error);
       // Inner onSave handles alert already
