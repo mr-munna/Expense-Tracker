@@ -7585,7 +7585,7 @@ const generateBillPDF = async (
 
   let finalY = (doc as any).lastAutoTable.finalY || 150;
 
-  // Ensure enough space for signature and terms, otherwise add new page
+  // Ensure enough space for terms, otherwise add new page
   if (finalY > 230) {
     doc.addPage();
     addPageDecorations({
@@ -7594,13 +7594,36 @@ const generateBillPDF = async (
     finalY = 40;
   }
 
-  // Signature
+  // Terms & Conditions (Render first to calculate its height)
+  let termsEndY = finalY;
+  if (bill.termsAndConditions) {
+    doc.setFontSize(9);
+    doc.setFont(settings.fontStyle, "bold");
+    doc.text("Terms & Conditions:", 20, finalY + 20);
+    doc.setFont(settings.fontStyle, "normal");
+    const splitTerms = doc.splitTextToSize(bill.termsAndConditions, 120);
+    doc.text(splitTerms, 20, finalY + 25);
+    termsEndY = finalY + 25 + (splitTerms.length * 4.2);
+  } else {
+    termsEndY = finalY + 20;
+  }
+
+  // Ensure enough space for signature. If signature goes off page, add new page
+  if (termsEndY > 235) {
+    doc.addPage();
+    addPageDecorations({
+      pageNumber: (doc as any).internal.getNumberOfPages(),
+    });
+    termsEndY = 40;
+  }
+
+  // Signature (rendered on the right side after terms have finished)
   doc.setFontSize(10);
   doc.setTextColor(0, 0, 0);
   // Center "Best regards" in the signature area (right side)
   const signatureCenterX = 170;
   doc.setFont(settings.fontStyle, "normal");
-  doc.text("Best regards", signatureCenterX, finalY + 20, { align: "center" });
+  doc.text("Best regards", signatureCenterX, termsEndY + 10, { align: "center" });
 
   if (bill.signature) {
     try {
@@ -7608,7 +7631,7 @@ const generateBillPDF = async (
         bill.signature,
         "PNG",
         signatureCenterX - 15,
-        finalY + 22,
+        termsEndY + 12,
         30,
         15,
       );
@@ -7619,18 +7642,8 @@ const generateBillPDF = async (
 
   doc.setFont(settings.fontStyle, "bold");
   const signatoryName = bill.preparedBy || localStorage.getItem("savedPreparedBy") || "";
-  doc.text(signatoryName, signatureCenterX, finalY + 42, { align: "center" });
+  doc.text(signatoryName, signatureCenterX, termsEndY + 32, { align: "center" });
   doc.setFont(settings.fontStyle, "normal");
-
-  // Terms & Conditions
-  if (bill.termsAndConditions) {
-    doc.setFontSize(9);
-    doc.setFont(settings.fontStyle, "bold");
-    doc.text("Terms & Conditions:", 20, finalY + 20);
-    doc.setFont(settings.fontStyle, "normal");
-    const splitTerms = doc.splitTextToSize(bill.termsAndConditions, 120);
-    doc.text(splitTerms, 20, finalY + 25);
-  }
 
   const companyPrefix = settings.companyName
     .replace(/\s+/g, "_")
@@ -8007,6 +8020,94 @@ function PDFSettingsView({
   );
 }
 
+const DEFAULT_QUOTATION_TERMS = `1. The estimated work completion time is 15 working days, subject to site readiness and material availability.
+2. Any additional work requested beyond the agreed scope will be charged separately and added to the final invoice.
+3. If a 45-degree edge cutting (mitred corner finish) is required, an additional BDT 250 per running foot (RFT) will be charged for installation only.
+4. Our technical team is highly experienced and uses professional tools and equipment for the cutting, handling, and installation of slabs.
+5. Slabs are inherently fragile. While we take every precaution during handling and installation, any accidental breakage or damage due to the nature of the material shall not be our responsibility.
+6. 100% advance payment is required for all material costs.
+7. Installation Payment Terms:
+  ** 60% advance payment is required before commencement of installation.
+  ** 30% payment is due upon completion of 50% of the installation work.
+  ** The remaining 10% payment must be made upon the successful handover.
+8. All quoted prices are exclusive of VAT, TAX, and AIT. These charges will be added to the invoice if applicable.`;
+
+const generateDefaultSignature = (): string => {
+  if (typeof document === "undefined") return "";
+  const canvas = document.createElement("canvas");
+  canvas.width = 300;
+  canvas.height = 200;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+
+  ctx.strokeStyle = "#110b17";
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // Stroke 1: Left starter sweep and tall 'A' peak
+  ctx.beginPath();
+  ctx.moveTo(35, 105);
+  ctx.bezierCurveTo(45, 125, 55, 145, 62, 145);
+  ctx.bezierCurveTo(72, 145, 80, 95, 90, 25); // peak of 'A'
+  ctx.stroke();
+
+  // Stroke 2: Down from 'A' peak, big bottom loop, and transition to 'n'
+  ctx.beginPath();
+  ctx.moveTo(90, 25);
+  ctx.bezierCurveTo(90, 75, 88, 120, 85, 150); // down stem
+  ctx.bezierCurveTo(83, 162, 75, 168, 68, 162); // loop left
+  ctx.bezierCurveTo(60, 155, 62, 142, 78, 138); // loop right & up
+  ctx.bezierCurveTo(92, 134, 100, 142, 106, 150); // connecting loop to n
+  ctx.stroke();
+
+  // Stroke 3: 'n' humps
+  ctx.beginPath();
+  ctx.moveTo(106, 150);
+  ctx.bezierCurveTo(116, 115, 124, 110, 128, 135); // hump 1
+  ctx.bezierCurveTo(132, 110, 140, 110, 148, 140); // hump 2
+  ctx.stroke();
+
+  // Stroke 4: 'i' up-down and loop to 'k'
+  ctx.beginPath();
+  ctx.moveTo(148, 140);
+  ctx.bezierCurveTo(154, 115, 160, 115, 164, 135); // i stem
+  ctx.stroke();
+
+  // Dot for 'i'
+  ctx.beginPath();
+  ctx.fillStyle = "#110b17";
+  ctx.arc(158, 88, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Stroke 5: 'k' tall loop and exit tick
+  ctx.beginPath();
+  ctx.moveTo(164, 135);
+  ctx.bezierCurveTo(174, 105, 185, 32, 192, 28); // up to peak of k
+  ctx.bezierCurveTo(196, 24, 198, 35, 194, 60); // loop down
+  ctx.bezierCurveTo(188, 90, 182, 115, 178, 145); // down stem
+  ctx.stroke();
+
+  // 'k' middle loop and sweep right
+  ctx.beginPath();
+  ctx.moveTo(182, 110);
+  ctx.bezierCurveTo(198, 90, 208, 90, 212, 105); // kick loop
+  ctx.bezierCurveTo(216, 120, 235, 135, 275, 140); // exit stroke
+  ctx.stroke();
+
+  // Stroke 6: Bold arrow/underline at the bottom
+  ctx.beginPath();
+  ctx.moveTo(195, 150); // start of the tick
+  ctx.bezierCurveTo(180, 168, 172, 178, 165, 182); // down-left
+  ctx.bezierCurveTo(168, 178, 178, 170, 188, 165); // back up-right slightly
+  ctx.bezierCurveTo(210, 152, 245, 142, 275, 132); // sweeping line
+  ctx.stroke();
+
+  return canvas.toDataURL("image/png");
+};
+
+const DEFAULT_SIGNATURE = typeof window !== "undefined" ? generateDefaultSignature() : undefined;
+
 function BillView({
   type,
   nextNumber,
@@ -8080,7 +8181,7 @@ function BillView({
     if (initialBill) return initialBill.signature;
     return localStorage.getItem(`draft_${type}_signature`) ||
       localStorage.getItem("savedSignature") ||
-      undefined;
+      DEFAULT_SIGNATURE;
   });
 
   useEffect(() => {
@@ -8090,9 +8191,9 @@ function BillView({
   const [terms, setTerms] = useState(() => {
     if (initialBill) return initialBill.termsAndConditions || "";
     const saved = localStorage.getItem(`draft_${type}_terms`);
-    if (saved !== null) return saved;
+    if (saved !== null && saved !== "1. Payment should be made within 7 days.\n2. 50% advance required.") return saved;
     return type === "QUOTATION"
-      ? "1. Payment should be made within 7 days.\n2. 50% advance required."
+      ? DEFAULT_QUOTATION_TERMS
       : "";
   });
   
@@ -8519,22 +8620,49 @@ function BillView({
 
             {type === "QUOTATION" && (
               <div className="bottom-section space-y-1 md:col-span-2">
-                <label className="text-[10px] font-bold text-[#78909C] uppercase">
-                  Terms & Conditions
-                </label>
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-bold text-[#78909C] uppercase">
+                    Terms & Conditions
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm("Reset terms to default Al Tasmim terms?")) {
+                        setTerms(DEFAULT_QUOTATION_TERMS);
+                      }
+                    }}
+                    className="text-[10px] text-[#0D47A1] hover:underline font-bold cursor-pointer"
+                  >
+                    Reset to Default
+                  </button>
+                </div>
                 <textarea
                   value={terms}
                   onChange={(e) => setTerms(e.target.value)}
-                  className="w-full p-2 border border-[#B0BEC5] rounded bg-[#F5F9FD] text-sm h-20"
+                  className="w-full p-2 border border-[#B0BEC5] rounded bg-[#F5F9FD] text-xs h-48 font-sans leading-relaxed"
                   placeholder="Enter terms and conditions..."
                 />
               </div>
             )}
 
             <div className="bottom-section space-y-1 md:col-span-2">
-              <label className="text-[10px] font-bold text-[#78909C] uppercase">
-                Signature Details
-              </label>
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-bold text-[#78909C] uppercase">
+                  Signature Details
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm("Reset to default Al Tasmim signature?")) {
+                      setSignature(DEFAULT_SIGNATURE);
+                      setPreparedBy("Md Shahiduzzaman Anik");
+                    }
+                  }}
+                  className="text-[10px] text-[#0D47A1] hover:underline font-bold cursor-pointer"
+                >
+                  Reset to Default
+                </button>
+              </div>
               <div className="flex flex-col gap-2">
                 <input
                   type="text"
@@ -8755,7 +8883,7 @@ function BillView({
                       advance: 0,
                       preparedBy,
                       signature,
-                      termsAndConditions: terms,
+                      termsAndConditions: "",
                       timestamp: new Date().toLocaleString("en-GB"),
                     });
                   }}
