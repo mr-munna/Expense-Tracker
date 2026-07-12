@@ -19,6 +19,7 @@ import {
   RefreshCw,
   CheckCircle2,
   ChevronUp,
+  ChevronDown,
   AlertCircle,
   FileJson,
   Upload,
@@ -1326,6 +1327,21 @@ function AppContent() {
     }
   };
 
+  const handleConvertToBill = (quotation: Bill) => {
+    const convertedBill: Bill = {
+      ...quotation,
+      id: generateId(),
+      type: "BILL",
+      billNumber: `AE-B-${nextBillNumber.toString().padStart(4, "0")}`,
+      date: new Date().toISOString().split("T")[0],
+      advance: 0,
+      discount: 0,
+      subject: quotation.subject.replace(/Quotation/i, "Bill"),
+    };
+    setEditingBill(convertedBill);
+    setCurrentView("BILL");
+  };
+
   const renderView = () => {
     switch (currentView) {
       case "DASHBOARD":
@@ -1628,13 +1644,15 @@ function AppContent() {
           );
         return (
           <BillView
+            key={editingBill ? `bill-edit-${editingBill.id}` : 'bill-new'}
             type="BILL"
             nextNumber={nextBillNumber}
             initialBill={editingBill || undefined}
             pdfSettings={pdfSettings}
             onSave={async (bill) => {
               try {
-                if (editingBill) {
+                const exists = bills.some((b) => b.id === bill.id);
+                if (exists) {
                   await updateDoc(doc(db, "bills", bill.id), bill as any);
                   setEditingBill(null);
                 } else {
@@ -1671,13 +1689,15 @@ function AppContent() {
           );
         return (
           <BillView
+            key={editingBill ? `quotation-edit-${editingBill.id}` : 'quotation-new'}
             type="QUOTATION"
             nextNumber={nextQuotationNumber}
             initialBill={editingBill || undefined}
             pdfSettings={pdfSettings}
             onSave={async (bill) => {
               try {
-                if (editingBill) {
+                const exists = quotations.some((q) => q.id === bill.id);
+                if (exists) {
                   await updateDoc(doc(db, "quotations", bill.id), bill as any);
                   setEditingBill(null);
                 } else {
@@ -1696,6 +1716,7 @@ function AppContent() {
                 );
               }
             }}
+            onConvertToBill={handleConvertToBill}
             onBack={() => {
               setEditingBill(null);
               setCurrentView("DASHBOARD");
@@ -1719,6 +1740,7 @@ function AppContent() {
               setEditingBill(bill);
               setCurrentView(bill.type === "BILL" ? "BILL" : "QUOTATION");
             }}
+            onConvertToBill={handleConvertToBill}
             onBack={() => setCurrentView("DASHBOARD")}
             pdfSettings={pdfSettings}
             isAdmin={hasPermission("historyLogs", "edit")}
@@ -2424,8 +2446,8 @@ function DashboardView({
       return match ? new Date(`${match[3]}-${match[2]}-${match[1]}`).getTime() : 0;
     };
     const combined = [
-      ...payments.map(p => ({ type: 'Payment', date: p.timestamp ? p.timestamp.split(',')[0] : p.date, amount: p.payment + (p.transport || 0), projectName: p.projectName, name: p.employeeName, timestamp: p.timestamp || p.date })),
-      ...projectExpenses.map(p => ({ type: 'Expense', date: p.timestamp ? p.timestamp.split(',')[0] : p.date, amount: p.materialsCost + p.transportCost + p.othersCost, projectName: p.projectName, name: p.materialsName, timestamp: p.timestamp || p.date }))
+      ...payments.map(p => ({ type: 'Payment', date: p.timestamp ? p.timestamp.split(',')[0] : "", amount: p.payment + (p.transport || 0), projectName: p.projectName, name: p.employeeName, timestamp: p.timestamp || "" })),
+      ...projectExpenses.map(p => ({ type: 'Expense', date: p.timestamp ? p.timestamp.split(',')[0] : "", amount: p.materialsCost + p.transportCost + p.othersCost, projectName: p.projectName, name: p.materialsName, timestamp: p.timestamp || "" }))
     ].sort((a,b) => parseTs(b.timestamp) - parseTs(a.timestamp)).slice(0, 10); // Show max 10 recent global entries
     return combined;
   }, [payments, projectExpenses]);
@@ -7990,13 +8012,16 @@ function BillView({
   nextNumber,
   onSave,
   onBack,
+  onConvertToBill,
   initialBill,
   pdfSettings,
 }: {
+  key?: string;
   type: "BILL" | "QUOTATION";
   nextNumber: number;
   onSave: (bill: Bill) => void;
   onBack: () => void;
+  onConvertToBill?: (bill: Bill) => void;
   initialBill?: Bill;
   pdfSettings: PDFSettings;
 }) {
@@ -8288,6 +8313,32 @@ function BillView({
     ]);
   };
 
+  const insertItem = (index: number) => {
+    const newItem = {
+      id: generateId(),
+      areaName: "",
+      tiles: "",
+      qty: 0,
+      unit: "sft",
+      price: 0,
+      total: 0,
+    };
+    const updated = [...items];
+    updated.splice(index, 0, newItem);
+    setItems(updated);
+  };
+
+  const moveItem = (index: number, direction: "up" | "down") => {
+    if (direction === "up" && index === 0) return;
+    if (direction === "down" && index === items.length - 1) return;
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    const updated = [...items];
+    const temp = updated[index];
+    updated[index] = updated[targetIndex];
+    updated[targetIndex] = temp;
+    setItems(updated);
+  };
+
   const removeItem = (id: string) => {
     if (items.length > 1) {
       setItems(items.filter((item) => item.id !== id));
@@ -8520,86 +8571,126 @@ function BillView({
 
             <div className="space-y-3">
               {items.map((item, index) => (
-                <div
-                  key={item.id}
-                  data-item-index={index}
-                  className="p-3 border border-[#B0BEC5]/30 rounded-lg bg-[#F5F9FD] space-y-2 relative pr-10"
-                >
-                  <button
-                    onClick={() => removeItem(item.id)}
-                    className="absolute right-2 top-2 text-red-500 hover:bg-red-50 p-1 rounded"
+                <React.Fragment key={item.id}>
+                  {/* Inline insertion bar before each item */}
+                  <div className="relative flex items-center justify-center py-1 group/insert">
+                    <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                      <div className="w-full border-t border-dashed border-[#90CAF9]/40 group-hover/insert:border-[#0D47A1]/40"></div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => insertItem(index)}
+                      className="relative z-10 px-2.5 py-0.5 bg-white hover:bg-[#E3F2FD] border border-[#90CAF9] text-[#0D47A1] rounded-full text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm opacity-40 group-hover/insert:opacity-100 scale-95 group-hover/insert:scale-100 cursor-pointer"
+                      title="Insert item here"
+                    >
+                      <Plus className="w-3 h-3 text-[#0D47A1]" /> Insert Item Here
+                    </button>
+                  </div>
+
+                  <div
+                    data-item-index={index}
+                    className="p-3 border border-[#B0BEC5]/30 rounded-lg bg-[#F5F9FD] space-y-2 relative pr-10"
                   >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="col-span-2">
-                      <input
-                        type="text"
-                        placeholder="Area Name"
-                        value={item.areaName}
-                        onChange={(e) =>
-                          updateItem(item.id, "areaName", e.target.value)
-                        }
-                        className="w-full p-1.5 border border-[#B0BEC5] rounded text-xs"
-                      />
+                    <div className="absolute right-2 top-2 flex flex-col gap-1.5 items-center z-10">
+                      <button
+                        type="button"
+                        onClick={() => removeItem(item.id)}
+                        className="text-red-500 hover:bg-red-50 p-1 rounded transition-colors cursor-pointer"
+                        title="Remove Item"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      {index > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => moveItem(index, "up")}
+                          className="text-[#0D47A1] hover:bg-blue-50 p-1 rounded transition-colors cursor-pointer"
+                          title="Move Up"
+                        >
+                          <ChevronUp className="w-4 h-4" />
+                        </button>
+                      )}
+                      {index < items.length - 1 && (
+                        <button
+                          type="button"
+                          onClick={() => moveItem(index, "down")}
+                          className="text-[#0D47A1] hover:bg-blue-50 p-1 rounded transition-colors cursor-pointer"
+                          title="Move Down"
+                        >
+                          <ChevronDown className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
-                    <div className="col-span-2">
-                      <input
-                        type="text"
-                        placeholder="Work Description"
-                        value={item.tiles}
-                        onChange={(e) =>
-                          updateItem(item.id, "tiles", e.target.value)
-                        }
-                        className="w-full p-1.5 border border-[#B0BEC5] rounded text-xs"
-                      />
-                    </div>
-                    <div>
-                      <input
-                        type="number"
-                        placeholder="Qty"
-                        value={item.qty || ""}
-                        onChange={(e) =>
-                          updateItem(
-                            item.id,
-                            "qty",
-                            parseFloat(e.target.value) || 0,
-                          )
-                        }
-                        className="w-full p-1.5 border border-[#B0BEC5] rounded text-xs"
-                      />
-                    </div>
-                    <div>
-                      <input
-                        type="text"
-                        placeholder="Unit (sft/rft)"
-                        value={item.unit}
-                        onChange={(e) =>
-                          updateItem(item.id, "unit", e.target.value)
-                        }
-                        className="w-full p-1.5 border border-[#B0BEC5] rounded text-xs"
-                      />
-                    </div>
-                    <div>
-                      <input
-                        type="number"
-                        placeholder="Price"
-                        value={item.price || ""}
-                        onChange={(e) =>
-                          updateItem(
-                            item.id,
-                            "price",
-                            parseFloat(e.target.value) || 0,
-                          )
-                        }
-                        className="w-full p-1.5 border border-[#B0BEC5] rounded text-xs"
-                      />
-                    </div>
-                    <div className="flex items-center justify-end font-bold text-xs">
-                      Total: {item.total.toLocaleString()}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="col-span-2">
+                        <input
+                          type="text"
+                          placeholder="Area Name"
+                          value={item.areaName}
+                          onChange={(e) =>
+                            updateItem(item.id, "areaName", e.target.value)
+                          }
+                          className="w-full p-1.5 border border-[#B0BEC5] rounded text-xs"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <input
+                          type="text"
+                          placeholder="Work Description"
+                          value={item.tiles}
+                          onChange={(e) =>
+                            updateItem(item.id, "tiles", e.target.value)
+                          }
+                          className="w-full p-1.5 border border-[#B0BEC5] rounded text-xs"
+                        />
+                      </div>
+                      <div>
+                        <input
+                          type="number"
+                          placeholder="Qty"
+                          value={item.qty || ""}
+                          onChange={(e) =>
+                            updateItem(
+                              item.id,
+                              "qty",
+                              parseFloat(e.target.value) || 0,
+                            )
+                          }
+                          className="w-full p-1.5 border border-[#B0BEC5] rounded text-xs"
+                        />
+                      </div>
+                      <div>
+                        <input
+                          type="text"
+                          placeholder="Unit (sft/rft)"
+                          value={item.unit}
+                          onChange={(e) =>
+                            updateItem(item.id, "unit", e.target.value)
+                          }
+                          className="w-full p-1.5 border border-[#B0BEC5] rounded text-xs"
+                        />
+                      </div>
+                      <div>
+                        <input
+                          type="number"
+                          placeholder="Price"
+                          value={item.price || ""}
+                          onChange={(e) =>
+                            updateItem(
+                              item.id,
+                              "price",
+                              parseFloat(e.target.value) || 0,
+                            )
+                          }
+                          className="w-full p-1.5 border border-[#B0BEC5] rounded text-xs"
+                        />
+                      </div>
+                      <div className="flex items-center justify-end font-bold text-xs">
+                        Total: {item.total.toLocaleString()}
+                      </div>
                     </div>
                   </div>
-                </div>
+                </React.Fragment>
               ))}
 
               <button
@@ -8647,6 +8738,32 @@ function BillView({
             </div>
             
             <div className="flex gap-2 mb-1">
+              {type === "QUOTATION" && onConvertToBill && (
+                <button
+                  onClick={() => {
+                    onConvertToBill({
+                      id: generateId(),
+                      type: "BILL",
+                      billNumber: "",
+                      date: new Date().toISOString().split("T")[0],
+                      recipientName,
+                      site,
+                      subject: subject.replace(/Quotation/i, "Bill"),
+                      items,
+                      totalInWords: numberToWords(grandTotal),
+                      grandTotal,
+                      advance: 0,
+                      preparedBy,
+                      signature,
+                      termsAndConditions: terms,
+                      timestamp: new Date().toLocaleString("en-GB"),
+                    });
+                  }}
+                  className="px-4 py-2 bg-[#2E7D32] text-white rounded-lg font-bold hover:bg-[#1B5E20] transition-all text-xs sm:text-sm whitespace-nowrap shadow flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Convert to Bill
+                </button>
+              )}
               <button
                 onClick={handleSave}
                 className="px-4 py-2 bg-[#0D47A1] text-white rounded-lg font-bold hover:bg-[#1565C0] transition-all text-xs sm:text-sm whitespace-nowrap shadow"
@@ -8704,6 +8821,7 @@ function BillView({
 function BillHistoryView({
   bills,
   onEdit,
+  onConvertToBill,
   onBack,
   pdfSettings,
   isAdmin,
@@ -8711,6 +8829,7 @@ function BillHistoryView({
 }: {
   bills: Bill[];
   onEdit: (bill: Bill) => void;
+  onConvertToBill?: (bill: Bill) => void;
   onBack: () => void;
   pdfSettings: PDFSettings;
   isAdmin: boolean;
@@ -8838,6 +8957,15 @@ function BillHistoryView({
               className="flex justify-end gap-2 pt-2 border-t border-[#B0BEC5]/20"
               onClick={(e) => e.stopPropagation()}
             >
+              {bill.type === "QUOTATION" && onConvertToBill && (
+                <button
+                  onClick={() => onConvertToBill(bill)}
+                  className="p-2 text-[#2E7D32] hover:bg-green-50 rounded-lg transition-colors"
+                  title="Convert to Bill"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+              )}
               {isAdmin && (
                 <>
                   <button
