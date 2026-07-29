@@ -42,6 +42,13 @@ export interface BillItem {
   total: number;
 }
 
+export interface BillDeduction {
+  id: string;
+  label: string;
+  amount: number;
+  type?: 'minus' | 'plus';
+}
+
 export interface Bill {
   id: string;
   type: 'BILL' | 'QUOTATION';
@@ -54,6 +61,8 @@ export interface Bill {
   totalInWords: string;
   grandTotal: number;
   advance?: number;
+  advanceLabel?: string;
+  additionalDeductions?: BillDeduction[];
   discount?: number;
   preparedBy: string;
   signature?: string;
@@ -61,6 +70,10 @@ export interface Bill {
   timestamp: string;
   revision?: number;
   createdByEmail?: string;
+  isRunningBill?: boolean;
+  runningBillNo?: string;
+  workDonePercentage?: number;
+  runningBillText?: string;
 }
 
 export interface PDFSettings {

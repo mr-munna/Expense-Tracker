@@ -81,6 +81,7 @@ import {
   View,
   TomorrowWorkRow,
   Bill,
+  BillDeduction,
   BillItem,
   PDFSettings,
   UserRole,
@@ -7419,23 +7420,26 @@ const generateBillPDF = async (
   // Bill/Quotation Title in middle
   doc.setFontSize(16);
   doc.setFont(settings.fontStyle, "bold");
-  doc.text(bill.type, 105, 44, { align: "center" });
+  doc.text(bill.type, 105, 43, { align: "center" });
 
   // Underline for Title
   const titleWidth = doc.getTextWidth(bill.type);
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.5);
-  doc.line(105 - titleWidth / 2, 46, 105 + titleWidth / 2, 46);
+  doc.line(105 - titleWidth / 2, 45, 105 + titleWidth / 2, 45);
+
+  const startSiteY = 52;
+  const startTableY = 61;
 
   doc.setFontSize(10);
   doc.setFont(settings.fontStyle, "bold");
-  doc.text(`Site: `, 20, 52);
+  doc.text(`Site: `, 20, startSiteY);
   doc.setFont(settings.fontStyle, "normal");
-  doc.text(bill.site, 30, 52);
+  doc.text(bill.site, 30, startSiteY);
 
   doc.setFont(settings.fontStyle, "bold");
-  doc.text(`Sub: `, 20, 56);
-  doc.text(bill.subject, 30, 56);
+  doc.text(`Sub: `, 20, startSiteY + 4);
+  doc.text(bill.subject, 30, startSiteY + 4);
 
   // Check empty columns
   const hasAreaName = bill.items.some((i) => i.areaName?.trim() !== "");
@@ -7477,52 +7481,105 @@ const generateBillPDF = async (
     }
   });
 
-  const hasAdvance = bill.type === "BILL" && (bill.advance || 0) > 0;
-  const hasDiscount = bill.type === "QUOTATION" && (bill.discount || 0) > 0;
-  
+  const deductionList: { label: string; amount: number; type?: "minus" | "plus" }[] = [];
+
+  if (bill.type === "BILL") {
+    if ((bill.advance || 0) > 0 || (bill.advanceLabel && bill.advanceLabel.trim() !== "Advance" && bill.advanceLabel.trim() !== "")) {
+      deductionList.push({
+        label: bill.advanceLabel?.trim() || "Advance",
+        amount: bill.advance || 0,
+        type: "minus",
+      });
+    }
+    if (bill.additionalDeductions && bill.additionalDeductions.length > 0) {
+      bill.additionalDeductions.forEach((d) => {
+        if ((d.amount || 0) > 0 || (d.label && d.label.trim() !== "")) {
+          deductionList.push({
+            label: d.label?.trim() || "Deduction",
+            amount: d.amount || 0,
+            type: d.type || "minus",
+          });
+        }
+      });
+    }
+  } else if (bill.type === "QUOTATION") {
+    if ((bill.discount || 0) > 0) {
+      deductionList.push({
+        label: "Discount",
+        amount: bill.discount || 0,
+        type: "minus",
+      });
+    }
+  }
+
   const footData = [];
-  if (hasAdvance || hasDiscount) {
-    const isBill = bill.type === "BILL";
-    const deductionLabel = isBill ? "Advance" : "Discount";
-    const deductionAmount = isBill ? (bill.advance || 0) : (bill.discount || 0);
-    const finalLabel = isBill ? "Due" : "Grand Total";
-    const netTotal = bill.grandTotal - deductionAmount;
-    
-    footData.push([
-      {
-        content: `In word: ${bill.totalInWords}`,
-        rowSpan: 3,
-        colSpan: columns.length - 2,
-        styles: { fontStyle: "bold", font: settings.fontStyle, valign: "middle" },
-      },
-      {
-        content: "Sub Total",
-        styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle },
-      },
-      {
-        content: `Tk. ${bill.grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
-        styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle },
+  if (deductionList.length > 0) {
+    let netTotal = bill.grandTotal;
+    deductionList.forEach((d) => {
+      if (d.type === "plus") {
+        netTotal += (d.amount || 0);
+      } else {
+        netTotal -= (d.amount || 0);
       }
-    ]);
-    footData.push([
-      {
-        content: deductionLabel,
-        styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle },
-      },
-      {
-        content: `Tk. ${deductionAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
-        styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle },
-      }
-    ]);
+    });
+    netTotal = Math.max(0, netTotal);
+    const finalLabel = bill.type === "BILL" ? "Due" : "Grand Total";
+
+    if (columns.length >= 3) {
+      footData.push([
+        {
+          content: `In word: ${bill.totalInWords}`,
+          colSpan: columns.length - 2,
+          styles: { fontStyle: "bold", font: settings.fontStyle, valign: "middle" },
+        },
+        {
+          content: "Sub Total",
+          styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle },
+        },
+        {
+          content: `Tk. ${bill.grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
+          styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle },
+        },
+      ]);
+    } else {
+      footData.push([
+        {
+          content: `In word: ${bill.totalInWords} (Sub Total)`,
+          colSpan: columns.length - 1,
+          styles: { fontStyle: "bold", font: settings.fontStyle, halign: "left" },
+        },
+        {
+          content: `Tk. ${bill.grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
+          styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle },
+        },
+      ]);
+    }
+
+    deductionList.forEach((item) => {
+      const prefix = item.type === "plus" ? "(+) " : "";
+      footData.push([
+        {
+          content: item.label,
+          colSpan: columns.length - 1,
+          styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle },
+        },
+        {
+          content: `${prefix}Tk. ${item.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
+          styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle },
+        },
+      ]);
+    });
+
     footData.push([
       {
         content: finalLabel,
+        colSpan: columns.length - 1,
         styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle },
       },
       {
         content: `Tk. ${netTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
         styles: { fontStyle: "bold", halign: "right", font: settings.fontStyle, fillColor: [240, 240, 240] },
-      }
+      },
     ]);
   } else {
     footData.push([
@@ -7543,7 +7600,7 @@ const generateBillPDF = async (
   }
 
   autoTable(doc, {
-    startY: 61,
+    startY: startTableY,
     margin: { top: 40, bottom: 20 },
     head: [columns.map((c) => c.header)],
     body: tableData,
@@ -8202,11 +8259,55 @@ function BillView({
     const saved = localStorage.getItem(`draft_${type}_advance`);
     return saved ? parseFloat(saved) : 0;
   });
+  const [advanceLabel, setAdvanceLabel] = useState<string>(() => {
+    if (initialBill) return initialBill.advanceLabel || "Advance";
+    const saved = localStorage.getItem(`draft_${type}_advanceLabel`);
+    return saved || "Advance";
+  });
+  const [additionalDeductions, setAdditionalDeductions] = useState<BillDeduction[]>(() => {
+    if (initialBill) return initialBill.additionalDeductions || [];
+    const saved = localStorage.getItem(`draft_${type}_additionalDeductions`);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  });
   const [discount, setDiscount] = useState<number>(() => {
     if (initialBill) return initialBill.discount || 0;
     const saved = localStorage.getItem(`draft_${type}_discount`);
     return saved ? parseFloat(saved) : 0;
   });
+
+  const [isRunningBill, setIsRunningBill] = useState<boolean>(() => {
+    if (initialBill) return initialBill.isRunningBill || false;
+    const saved = localStorage.getItem(`draft_${type}_isRunningBill`);
+    return saved === "true";
+  });
+  const [runningBillNo, setRunningBillNo] = useState<string>(() => {
+    if (initialBill) return initialBill.runningBillNo || "1st Running Bill";
+    const saved = localStorage.getItem(`draft_${type}_runningBillNo`);
+    return saved || "1st Running Bill";
+  });
+  const [customRunningBillNo, setCustomRunningBillNo] = useState<string>(() => {
+    if (initialBill && initialBill.runningBillNo && !["1st Running Bill", "2nd Running Bill", "3rd Running Bill", "4th Running Bill", "5th Running Bill", "6th Running Bill", "Final Bill"].includes(initialBill.runningBillNo)) {
+      return initialBill.runningBillNo;
+    }
+    return localStorage.getItem(`draft_${type}_customRunningBillNo`) || "";
+  });
+  const [workDonePercentage, setWorkDonePercentage] = useState<number>(() => {
+    if (initialBill) return initialBill.workDonePercentage || 0;
+    const saved = localStorage.getItem(`draft_${type}_workDonePercentage`);
+    return saved ? parseFloat(saved) : 0;
+  });
+
+  const effectiveRunningBillNo = runningBillNo === "Custom" ? customRunningBillNo : runningBillNo;
+  const runningBillText = isRunningBill
+    ? `${effectiveRunningBillNo || "Running Bill"} (${workDonePercentage}% Work Done)`
+    : undefined;
 
   useEffect(() => {
     if (!initialBill) {
@@ -8268,9 +8369,45 @@ function BillView({
 
   useEffect(() => {
     if (!initialBill) {
+      localStorage.setItem(`draft_${type}_advanceLabel`, advanceLabel);
+    }
+  }, [advanceLabel, type, initialBill]);
+
+  useEffect(() => {
+    if (!initialBill) {
+      localStorage.setItem(`draft_${type}_additionalDeductions`, JSON.stringify(additionalDeductions));
+    }
+  }, [additionalDeductions, type, initialBill]);
+
+  useEffect(() => {
+    if (!initialBill) {
       localStorage.setItem(`draft_${type}_discount`, discount.toString());
     }
   }, [discount, type, initialBill]);
+
+  useEffect(() => {
+    if (!initialBill) {
+      localStorage.setItem(`draft_${type}_isRunningBill`, isRunningBill.toString());
+    }
+  }, [isRunningBill, type, initialBill]);
+
+  useEffect(() => {
+    if (!initialBill) {
+      localStorage.setItem(`draft_${type}_runningBillNo`, runningBillNo);
+    }
+  }, [runningBillNo, type, initialBill]);
+
+  useEffect(() => {
+    if (!initialBill) {
+      localStorage.setItem(`draft_${type}_customRunningBillNo`, customRunningBillNo);
+    }
+  }, [customRunningBillNo, type, initialBill]);
+
+  useEffect(() => {
+    if (!initialBill) {
+      localStorage.setItem(`draft_${type}_workDonePercentage`, workDonePercentage.toString());
+    }
+  }, [workDonePercentage, type, initialBill]);
 
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [currentPdfPage, setCurrentPdfPage] = useState<number>(1);
@@ -8319,7 +8456,20 @@ function BillView({
   }, []);
 
   const grandTotal = items.reduce((sum, item) => sum + item.total, 0);
-  const netTotal = type === "BILL" ? Math.max(0, grandTotal - advance) : Math.max(0, grandTotal - discount);
+  let netTotal = grandTotal;
+  if (type === "BILL") {
+    netTotal -= (advance || 0);
+    additionalDeductions.forEach((d) => {
+      if (d.type === "plus") {
+        netTotal += (d.amount || 0);
+      } else {
+        netTotal -= (d.amount || 0);
+      }
+    });
+  } else {
+    netTotal -= (discount || 0);
+  }
+  netTotal = Math.max(0, netTotal);
 
   useEffect(() => {
     let active = true;
@@ -8336,6 +8486,8 @@ function BillView({
         totalInWords: numberToWords(netTotal),
         grandTotal,
         advance: type === "BILL" ? advance : undefined,
+        advanceLabel: type === "BILL" ? (advanceLabel || "Advance") : undefined,
+        additionalDeductions: type === "BILL" ? additionalDeductions : undefined,
         discount: type === "QUOTATION" ? discount : undefined,
         preparedBy: preparedBy || "Preview Signatory",
         signature: signature || null,
@@ -8378,6 +8530,8 @@ function BillView({
     items,
     grandTotal,
     advance,
+    advanceLabel,
+    additionalDeductions,
     discount,
     preparedBy,
     signature,
@@ -8485,6 +8639,8 @@ function BillView({
       totalInWords: numberToWords(netTotal),
       grandTotal,
       advance: type === "BILL" ? (advance || 0) : 0,
+      advanceLabel: type === "BILL" ? (advanceLabel || "Advance") : "Advance",
+      additionalDeductions: type === "BILL" ? additionalDeductions : [],
       discount: type === "QUOTATION" ? (discount || 0) : 0,
       preparedBy,
       signature: signature || null,
@@ -8511,6 +8667,8 @@ function BillView({
         localStorage.removeItem(`draft_${type}_signature`);
         localStorage.removeItem(`draft_${type}_terms`);
         localStorage.removeItem(`draft_${type}_advance`);
+        localStorage.removeItem(`draft_${type}_advanceLabel`);
+        localStorage.removeItem(`draft_${type}_additionalDeductions`);
         localStorage.removeItem(`draft_${type}_discount`);
       }
     } catch (error) {
@@ -8837,15 +8995,100 @@ function BillView({
               </div>
               
               {type === "BILL" ? (
-                <div className="flex items-center gap-2">
-                  <label className="text-xs sm:text-sm font-bold text-slate-600 w-16">Advance:</label>
-                  <input
-                    type="number"
-                    value={advance || ""}
-                    onChange={(e) => setAdvance(parseFloat(e.target.value) || 0)}
-                    className="w-24 p-1.5 border border-[#B0BEC5] rounded text-xs"
-                    placeholder="Tk."
-                  />
+                <div className="flex flex-col gap-2 max-w-md">
+                  {/* First Deduction Row (Editable Advance Label) */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={advanceLabel}
+                      onChange={(e) => setAdvanceLabel(e.target.value)}
+                      placeholder="Advance"
+                      className="w-36 sm:w-44 p-1.5 border border-[#B0BEC5] rounded text-xs font-bold text-slate-700 bg-white"
+                      title="Edit Advance Label"
+                    />
+                    <input
+                      type="number"
+                      value={advance || ""}
+                      onChange={(e) => setAdvance(parseFloat(e.target.value) || 0)}
+                      className="w-28 p-1.5 border border-[#B0BEC5] rounded text-xs bg-white font-medium"
+                      placeholder="Tk."
+                    />
+                  </div>
+
+                  {/* Additional Deduction / Running Bill Rows */}
+                  {additionalDeductions.map((ded, index) => (
+                    <div key={ded.id || index} className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                      <input
+                        type="text"
+                        value={ded.label}
+                        onChange={(e) => {
+                          const updated = [...additionalDeductions];
+                          updated[index].label = e.target.value;
+                          setAdditionalDeductions(updated);
+                        }}
+                        placeholder="e.g. 1st Running Bill (80% Work Done)"
+                        className="w-36 sm:w-44 p-1.5 border border-[#B0BEC5] rounded text-xs bg-white font-medium text-slate-800"
+                      />
+                      <input
+                        type="number"
+                        value={ded.amount || ""}
+                        onChange={(e) => {
+                          const updated = [...additionalDeductions];
+                          updated[index].amount = parseFloat(e.target.value) || 0;
+                          setAdditionalDeductions(updated);
+                        }}
+                        placeholder="Tk."
+                        className="w-24 sm:w-28 p-1.5 border border-[#B0BEC5] rounded text-xs bg-white font-medium"
+                      />
+                      <select
+                        value={ded.type || "minus"}
+                        onChange={(e) => {
+                          const updated = [...additionalDeductions];
+                          updated[index].type = e.target.value as "minus" | "plus";
+                          setAdditionalDeductions(updated);
+                        }}
+                        className={`p-1.5 border rounded text-xs font-bold cursor-pointer transition-colors ${
+                          ded.type === "plus"
+                            ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                            : "border-rose-400 bg-rose-50 text-rose-800"
+                        }`}
+                        title="Select whether this amount is subtracted (-) or added (+)"
+                      >
+                        <option value="minus">- Deduct (বিয়োগ)</option>
+                        <option value="plus">+ Add (যোগ)</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAdditionalDeductions(additionalDeductions.filter((_, i) => i !== index));
+                        }}
+                        className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                        title="Remove row"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+
+                  {/* Add Row Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdditionalDeductions([
+                        ...additionalDeductions,
+                        {
+                          id: generateId(),
+                          label: additionalDeductions.length === 0 ? "1st Running Bill (80% Work Done)" : `${additionalDeductions.length + 1}nd Running Bill`,
+                          amount: 0,
+                          type: "minus",
+                        },
+                      ]);
+                    }}
+                    className="flex items-center gap-1 text-xs font-bold text-[#0D47A1] hover:text-[#1565C0] pt-1 w-fit cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Deduction / Running Bill Row</span>
+                  </button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
@@ -8854,7 +9097,7 @@ function BillView({
                     type="number"
                     value={discount || ""}
                     onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
-                    className="w-24 p-1.5 border border-[#B0BEC5] rounded text-xs"
+                    className="w-24 p-1.5 border border-[#B0BEC5] rounded text-xs bg-white"
                     placeholder="Tk."
                   />
                 </div>
@@ -9035,51 +9278,67 @@ function BillHistoryView({
       </div>
 
       <div className="space-y-4">
-        {filteredBills.map((bill) => (
-          <div
-            key={bill.id}
-            onClick={async () =>
-              await generateBillPDF(bill, "view", pdfSettings)
-            }
-            className="bg-white p-4 rounded-xl shadow-sm border border-[#B0BEC5] space-y-3 cursor-pointer hover:border-[#0D47A1] transition-colors"
-          >
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded ${bill.type === "BILL" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"}`}
-                  >
-                    {bill.type}
-                  </span>
-                  <span className="text-xs text-[#78909C]">
-                    {new Date(bill.date).toLocaleDateString("en-GB")}
-                  </span>
+        {filteredBills.map((bill) => {
+          let dueOrNet = bill.grandTotal - (bill.type === "BILL" ? (bill.advance || 0) : (bill.discount || 0));
+          let hasAdjustments = (bill.advance || 0) > 0 || (bill.discount || 0) > 0;
+          if (bill.type === "BILL" && bill.additionalDeductions && bill.additionalDeductions.length > 0) {
+            hasAdjustments = true;
+            bill.additionalDeductions.forEach((d) => {
+              if (d.type === "plus") {
+                dueOrNet += (d.amount || 0);
+              } else {
+                dueOrNet -= (d.amount || 0);
+              }
+            });
+          }
+          dueOrNet = Math.max(0, dueOrNet);
+
+          return (
+            <div
+              key={bill.id}
+              onClick={async () =>
+                await generateBillPDF(bill, "view", pdfSettings)
+              }
+              className="bg-white p-4 rounded-xl shadow-sm border border-[#B0BEC5] space-y-3 cursor-pointer hover:border-[#0D47A1] transition-colors"
+            >
+              <div className="flex justify-between items-start">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded ${bill.type === "BILL" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"}`}
+                    >
+                      {bill.type}
+                    </span>
+                    {bill.additionalDeductions && bill.additionalDeductions.map((d, i) => d.label && (
+                      <span key={i} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${d.type === "plus" ? "bg-emerald-100 text-emerald-800 border-emerald-300" : "bg-amber-100 text-amber-800 border-amber-300"}`}>
+                        {d.type === "plus" ? "+ " : ""}{d.label}
+                      </span>
+                    ))}
+                    <span className="text-xs text-[#78909C]">
+                      {new Date(bill.date).toLocaleDateString("en-GB")}
+                    </span>
+                  </div>
+                  <h3 className="font-bold text-[#1A237E] mt-1">
+                    {bill.recipientName}
+                  </h3>
+                  <p className="text-xs text-[#78909C]">{bill.site}</p>
+                  {isSuperAdmin && (
+                    <p className="text-[10px] text-[#78909C] mt-1 italic">
+                      Added by: {bill.createdByEmail || "Unknown"}
+                    </p>
+                  )}
                 </div>
-                <h3 className="font-bold text-[#1A237E] mt-1">
-                  {bill.recipientName}
-                </h3>
-                <p className="text-xs text-[#78909C]">{bill.site}</p>
-                {isSuperAdmin && (
-                  <p className="text-[10px] text-[#78909C] mt-1 italic">
-                    Added by: {bill.createdByEmail || "Unknown"}
+                <div className="text-right">
+                  <p className="font-bold text-[#2E7D32]">
+                    {hasAdjustments ? dueOrNet.toLocaleString() : bill.grandTotal.toLocaleString()}
                   </p>
-                )}
+                  {hasAdjustments && (
+                    <p className="text-[10px] text-slate-500">
+                      {bill.type === "BILL" ? "Due" : "Total"}
+                    </p>
+                  )}
+                </div>
               </div>
-              <div className="text-right">
-                <p className="font-bold text-[#2E7D32]">
-                  {bill.type === "BILL" && (bill.advance || 0) > 0
-                    ? Math.max(0, bill.grandTotal - (bill.advance || 0)).toLocaleString() 
-                    : bill.type === "QUOTATION" && (bill.discount || 0) > 0
-                    ? Math.max(0, bill.grandTotal - (bill.discount || 0)).toLocaleString() 
-                    : bill.grandTotal.toLocaleString()}
-                </p>
-                {((bill.advance || 0) > 0 || (bill.discount || 0) > 0) && (
-                  <p className="text-[10px] text-slate-500">
-                    {bill.type === "BILL" ? "Due" : "Total"}
-                  </p>
-                )}
-              </div>
-            </div>
 
             <div
               className="flex justify-end gap-2 pt-2 border-t border-[#B0BEC5]/20"
@@ -9130,7 +9389,8 @@ function BillHistoryView({
               </button>
             </div>
           </div>
-        ))}
+        );
+      })}
         {filteredBills.length === 0 && (
           <div className="text-center py-10 text-[#78909C]">
             No records found
